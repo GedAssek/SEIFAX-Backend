@@ -33,17 +33,11 @@ app = FastAPI(
 
 
 # ─── CORS (Permettre au Frontend de communiquer avec le Backend) ─────────────
+# Autoriser toutes les origines pour assurer la compatibilité (GitHub Pages, Live Server, etc.)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5500",
-        "http://127.0.0.1:5500",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://seifax-frontend.onrender.com",
-        "https://gedassek.github.io"
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
