@@ -1,0 +1,414 @@
+[
+  {
+    "type": "subject",
+    "name": "Electricité générale",
+    "coefs": {
+      "int": 0,
+      "comp": 1.0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Circuits électriques",
+    "coefs": {
+      "int": 0.75,
+      "comp": 1.25,
+      "ex": 2.0,
+      "tp": 1.0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Electronique Fond",
+    "coefs": {
+      "int": 1.5,
+      "comp": 2.5,
+      "ex": 3.5,
+      "tp": 1.5
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Electronique Num",
+    "coefs": {
+      "int": 1.5,
+      "comp": 2.5,
+      "ex": 3.5,
+      "tp": 1.5
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Algo et Prog C",
+    "coefs": {
+      "int": 1.0,
+      "comp": 1.5,
+      "ex": 2.5,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Techno, Mat. Et Comp.",
+    "coefs": {
+      "int": 0.5,
+      "comp": 1.0,
+      "ex": 1.5,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "App de Mes et Outil électronic",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.5,
+      "tp": 1.0
+    }
+  },
+  {
+    "type": "category",
+    "name": "Matières Principales Générales(Groupe Anglais)"
+  },
+  {
+    "type": "subject",
+    "name": "Anglais général",
+    "coefs": {
+      "int": 0,
+      "comp": 1.5,
+      "ex": 2.5,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Anglais technique et prof",
+    "coefs": {
+      "int": 0,
+      "comp": 1.0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "category",
+    "name": "Matières Secondaires Professionnelles"
+  },
+  {
+    "type": "subject",
+    "name": "AOP",
+    "coefs": {
+      "int": 0,
+      "comp": 0.75,
+      "ex": 1.5,
+      "tp": 0.75
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Machine électrique",
+    "coefs": {
+      "int": 0,
+      "comp": 1.0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Electro de puissance",
+    "coefs": {
+      "int": 0,
+      "comp": 1.0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Automatique",
+    "coefs": {
+      "int": 0,
+      "comp": 1.0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Architec et config PC",
+    "coefs": {
+      "int": 0,
+      "comp": 1.0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Bureautique",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Organisations et normes",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Circulation aérienne",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Aérotechnique",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Météorologie",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Sécurité incendie",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Com et réseaux ATM",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Navigation CNS/ATM",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Surveillance",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Secourisme",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Intro aux réseaux",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Transmission de données",
+    "coefs": {
+      "int": 0,
+      "comp": 1.0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Reseaux nationaux",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Résaux internationaux",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Réseaux mondiaux",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Les protocoles",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Commutateurs de messages",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Sys de gest de l'info aéro",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Traitement des don. Surveill",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "App de Mes  Outil électricien..",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Transport d'energ electrique",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.5,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Transport de données",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Sys de prod et gest. Énergie",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 3.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Balisage",
+    "coefs": {
+      "int": 0,
+      "comp": 0,
+      "ex": 2.0,
+      "tp": 0
+    }
+  },
+  {
+    "type": "category",
+    "name": "Matières Secondaires Générales"
+  },
+  {
+    "type": "subject",
+    "name": "Education Physique",
+    "coefs": {
+      "int": 0.33,
+      "comp": 0.33,
+      "ex": 0.34,
+      "tp": 0
+    }
+  },
+  {
+    "type": "subject",
+    "name": "Assiduité",
+    "coefs": {
+      "int": 1.0,
+      "comp": 1.0,
+      "ex": 1.0,
+      "tp": 0
+    }
+  }
+]
