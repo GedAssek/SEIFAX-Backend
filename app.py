@@ -40,7 +40,8 @@ app.add_middleware(
         "http://127.0.0.1:5500",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://seifax-frontend.onrender.com"
+        "https://seifax-frontend.onrender.com",
+        "https://gedassek.github.io"
     ],
     allow_credentials=True,
     allow_methods=["*"],
