@@ -35,7 +35,13 @@ app = FastAPI(
 # ─── CORS (Permettre au Frontend de communiquer avec le Backend) ─────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En production, restreindre à l'URL du frontend
+    allow_origins=[
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://seifax-frontend.onrender.com"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
