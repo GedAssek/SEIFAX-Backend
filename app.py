@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 import os
 
 from database.db import connect_db, close_db
-from routes import auth, epreuves, infos, subjects, documents, admin
+from routes import auth, epreuves, infos, subjects, documents, admin, heures
 
 
 # ─── Cycle de vie de l'application ─────────────────────────────────────────
@@ -57,6 +57,7 @@ app.include_router(infos.router, prefix="/api")
 app.include_router(subjects.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(heures.router, prefix="/api")
 
 
 # ─── Route racine (test de santé) ───────────────────────────────────────────
