@@ -22,16 +22,29 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 def serialize_document(doc: dict) -> dict:
-    """Convertit un document MongoDB en dict JSON-compatible."""
+    """Convertit un document MongoDB en dict JSON-compatible.
+    Gère deux types de documents :
+      - Docs admin : ont un champ 'file_name' (fichier local uploadé)
+      - Docs Drive : ont un champ 'file_url' (lien Google Drive direct)
+    """
+    # Construire l'URL du fichier selon le type de document
+    if doc.get("file_name"):
+        # Document uploadé via l'admin → fichier local sur le serveur
+        file_url = f"/uploads/documents/{doc['file_name']}"
+    else:
+        # Document synchronisé depuis Google Drive → URL directe
+        file_url = doc.get("file_url", "")
+
     return {
         "id": str(doc["_id"]),
         "titre": doc.get("titre", "Document sans titre"),
-        "type": doc["type"],
+        "type": doc.get("type", "cours"),
         "categorie_eval": doc.get("categorie_eval"),
-        "matiere": doc["matiere"],
-        "cycle": doc["cycle"],
-        "annee": doc["annee"],
-        "file_url": f"/uploads/documents/{doc['file_name']}",
+        "matiere": doc.get("matiere", ""),
+        "cycle": doc.get("cycle", ""),
+        "annee": doc.get("annee"),
+        "file_url": file_url,
+        "source": "drive" if not doc.get("file_name") else "admin",
         "uploaded_by": doc.get("uploaded_by", "Admin"),
         "created_at": doc.get("created_at", "")
     }
@@ -45,6 +58,7 @@ async def list_documents(
     cycle: Optional[str] = Query(None),
     matiere: Optional[str] = Query(None),
     annee: Optional[int] = Query(None),
+    q: Optional[str] = Query(None),  # Recherche textuelle libre
     _: dict = Depends(get_current_user)  # Authentification requise
 ):
     db = get_db()
@@ -59,11 +73,21 @@ async def list_documents(
         query["matiere"] = {"$regex": matiere, "$options": "i"}
     if annee:
         query["annee"] = annee
+    # Recherche textuelle sur titre ET matiere
+    if q:
+        query["$or"] = [
+            {"titre": {"$regex": q, "$options": "i"}},
+            {"matiere": {"$regex": q, "$options": "i"}},
+        ]
 
     cursor = db.documents.find(query).sort("created_at", -1)
     results = []
     async for doc in cursor:
-        results.append(serialize_document(doc))
+        try:
+            results.append(serialize_document(doc))
+        except Exception:
+            # Ignorer les documents mal formés
+            continue
     return results
 
 
@@ -177,10 +201,11 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
 
-    # Supprimer le fichier physique
-    file_path = os.path.join(UPLOAD_DIR, doc["file_name"])
-    if os.path.exists(file_path):
-        os.remove(file_path)
+    # Supprimer le fichier physique SEULEMENT si c'est un doc admin (file_name présent)
+    if doc.get("file_name"):
+        file_path = os.path.join(UPLOAD_DIR, doc["file_name"])
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
     await db.documents.delete_one({"_id": ObjectId(document_id)})
     return {"message": "Document supprimé avec succès"}
