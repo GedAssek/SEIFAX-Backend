@@ -1,0 +1,208 @@
+import os
+import re
+import asyncio
+from typing import List, Dict, Any
+from datetime import datetime
+from dotenv import load_dotenv
+
+from googleapiclient.discovery import build
+from google.oauth2 import service_account
+from database.db import connect_db, close_db, get_db
+
+load_dotenv()
+
+# Liste des IDs des dossiers racines fournis par l'utilisateur
+ROOT_FOLDER_IDS = [
+    "1XUQZ9-mfHrX9O9796e9xyZtVvRlFf-U2",
+    "1Ue1s2Vp8bDSY99ra_95d1X_qZ1arNlPA",
+    "18bjsPtNCfR7_49U-X4V-eQCOkiWybX_n"
+]
+
+def get_drive_service():
+    # 1. Essayer avec le fichier JSON du Compte de Service (recommandé)
+    creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if creds_path and os.path.exists(creds_path):
+        creds = service_account.Credentials.from_service_account_file(
+            creds_path, scopes=['https://www.googleapis.com/auth/drive.readonly']
+        )
+        return build('drive', 'v3', credentials=creds)
+        
+    # 2. Sinon, essayer avec la clé API (dossiers publics uniquement)
+    api_key = os.getenv("GOOGLE_DRIVE_API_KEY")
+    if api_key:
+        return build('drive', 'v3', developerKey=api_key)
+        
+    raise ValueError("Ni GOOGLE_APPLICATION_CREDENTIALS ni GOOGLE_DRIVE_API_KEY ne sont définis.")
+
+def determine_type(filename: str) -> str:
+    name_lower = filename.lower()
+    
+    # Cours
+    if any(kw in name_lower for kw in ['module', 'support', 'cours', 'doc']):
+        return 'cours'
+    # TP/TD
+    elif any(kw in name_lower for kw in ['td', 'exo', 'sujet']):
+        return 'tp'
+    # Evaluation (fallback pour 'copie', 'interro', 'examen' et le reste)
+    else:
+        return 'evaluation'
+
+def parse_cycle_annee(folder_name: str):
+    """
+    Tente d'extraire le cycle et l'année depuis le nom du dossier (ex: EAC_SEI1_2024)
+    """
+    annee = 2024 # fallback
+    cycle = "EAC-SEI" # fallback
+    
+    # Recherche de l'année (4 chiffres commençant par 20)
+    match_annee = re.search(r'(20\d{2})', folder_name)
+    if match_annee:
+        annee = int(match_annee.group(1))
+        
+    # Extraction sommaire du cycle (simplifiée pour correspondre aux constantes du frontend)
+    name_upper = folder_name.upper()
+    if 'IEAMAC' in name_upper:
+        if 'SEI' in name_upper: cycle = "IEAMAC-SEI"
+        elif 'NA' in name_upper: cycle = "IEAMAC-NA"
+        elif 'M' in name_upper: cycle = "IEAMAC-M"
+    elif 'EAC' in name_upper:
+        if 'SEI' in name_upper: cycle = "EAC-SEI"
+        elif 'NA' in name_upper: cycle = "EAC-NA"
+        elif 'M' in name_upper: cycle = "EAC-M"
+    elif 'CCA' in name_upper:
+        cycle = "CCA"
+    elif 'T' in name_upper:
+        if 'NA' in name_upper: cycle = "T-NA"
+        elif 'M' in name_upper: cycle = "T-M"
+
+    return cycle, annee
+
+def list_drive_files(service, parent_id: str) -> List[Dict]:
+    """Récupère tous les fichiers/dossiers enfants d'un dossier donné."""
+    results = []
+    page_token = None
+    while True:
+        try:
+            response = service.files().list(
+                q=f"'{parent_id}' in parents and trashed=false",
+                spaces='drive',
+                fields='nextPageToken, files(id, name, mimeType, webViewLink, createdTime)',
+                pageToken=page_token
+            ).execute()
+            
+            for file in response.get('files', []):
+                results.append(file)
+            page_token = response.get('nextPageToken', None)
+            if page_token is None:
+                break
+        except Exception as e:
+            print(f"Erreur Drive API pour le dossier {parent_id}: {e}")
+            break
+    return results
+
+async def sync_drive_to_db():
+    try:
+        service = get_drive_service()
+    except Exception as e:
+        print(f"Erreur d'initialisation Google Drive: {e}")
+        return False, str(e)
+
+    # Note: connect_db and get_db logic
+    try:
+        await connect_db()
+    except Exception as e:
+        # Ignore if already connected in FastApi context
+        pass
+        
+    db = get_db()
+    if db is None:
+        return False, "Database not connected"
+
+    # Collection cible
+    docs_coll = db["documents"]
+    
+    total_inserted = 0
+    total_skipped = 0
+    
+    for root_id in ROOT_FOLDER_IDS:
+        print(f"Analyse de la racine: {root_id}")
+        try:
+            root_info = service.files().get(fileId=root_id, fields='name').execute()
+            root_name = root_info.get('name', 'Inconnu')
+        except:
+            continue
+            
+        print(f"  -> Nom du dossier racine: {root_name}")
+        
+        level1_items = list_drive_files(service, root_id)
+        
+        for l1 in level1_items:
+            if l1['mimeType'] == 'application/vnd.google-apps.folder':
+                # Si le nom contient une année ou "annee", c'est probablement le niveau "Cycle/Année"
+                if re.search(r'(20\d{2}|annee|année)', l1['name'].lower()):
+                    cycle, annee = parse_cycle_annee(l1['name'])
+                    
+                    level2_items = list_drive_files(service, l1['id'])
+                    for l2 in level2_items:
+                        if l2['mimeType'] == 'application/vnd.google-apps.folder':
+                            matiere = l2['name']
+                            
+                            files = list_drive_files(service, l2['id'])
+                            for f in files:
+                                if f['mimeType'] != 'application/vnd.google-apps.folder':
+                                    res = await process_and_insert_file(docs_coll, f, matiere, cycle, annee)
+                                    if res: total_inserted += 1
+                                    else: total_skipped += 1
+                                    
+                else:
+                    matiere = l1['name']
+                    cycle, annee = parse_cycle_annee(root_name)
+                    
+                    files = list_drive_files(service, l1['id'])
+                    for f in files:
+                        if f['mimeType'] != 'application/vnd.google-apps.folder':
+                            res = await process_and_insert_file(docs_coll, f, matiere, cycle, annee)
+                            if res: total_inserted += 1
+                            else: total_skipped += 1
+
+    try:
+        await close_db()
+    except:
+        pass
+        
+    return True, f"Synchronisation terminée. {total_inserted} documents ajoutés. {total_skipped} déjà existants."
+
+async def process_and_insert_file(docs_coll, file_item, matiere, cycle, annee) -> bool:
+    file_name = file_item['name']
+    file_url = file_item.get('webViewLink', '')
+    
+    existing = await docs_coll.find_one({"file_url": file_url})
+    if existing:
+        return False
+        
+    doc_type = determine_type(file_name)
+    
+    cat_eval = None
+    if doc_type == 'evaluation':
+        name_lower = file_name.lower()
+        if 'interro' in name_lower: cat_eval = 'interro'
+        elif 'compo' in name_lower: cat_eval = 'compo'
+        elif 'examen' in name_lower: cat_eval = 'examen'
+        
+    doc = {
+        "titre": file_name,
+        "type": doc_type,
+        "categorie_eval": cat_eval,
+        "matiere": matiere,
+        "cycle": cycle,
+        "annee": annee,
+        "file_url": file_url,
+        "uploaded_by": "System (Drive Sync)",
+        "created_at": datetime.now().isoformat()
+    }
+    
+    await docs_coll.insert_one(doc)
+    return True
+
+if __name__ == "__main__":
+    asyncio.run(sync_drive_to_db())

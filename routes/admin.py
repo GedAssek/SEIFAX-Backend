@@ -123,3 +123,15 @@ async def delete_user(user_id: str, admin: dict = Depends(get_admin_user)):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     return {"message": "Utilisateur supprimé avec succès"}
+
+# ─── POST /api/admin/sync-drive ──────────────────────────────────────────────
+@router.post("/sync-drive")
+async def trigger_sync_drive(admin: dict = Depends(get_admin_user)):
+    try:
+        from utils.sync_drive import sync_drive_to_db
+        success, message = await sync_drive_to_db()
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+        return {"message": message}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
