@@ -49,18 +49,32 @@ def determine_type(filename: str) -> str:
 
 def parse_cycle_annee(folder_name: str):
     """
-    Tente d'extraire le cycle et l'année depuis le nom du dossier (ex: EAC_SEI1_2024)
+    Tente d'extraire le cycle, l'année calendaire et l'année d'étude depuis le nom du dossier.
+    Exemples: EAC_SEI1_2024 -> cycle=EAC-SEI, annee=2024, annee_etude=1
+              EAC_NA_2èmeAnnee_2023 -> cycle=EAC-NA, annee=2023, annee_etude=2
     """
-    annee = 2024 # fallback
-    cycle = "EAC-SEI" # fallback
+    annee = 2024  # fallback année calendaire
+    cycle = "EAC-SEI"  # fallback cycle
+    annee_etude = None  # fallback : pas de restriction par année d'étude
     
-    # Recherche de l'année (4 chiffres commençant par 20)
+    # Recherche de l'année calendaire (4 chiffres commençant par 20)
     match_annee = re.search(r'(20\d{2})', folder_name)
     if match_annee:
         annee = int(match_annee.group(1))
-        
-    # Extraction sommaire du cycle (simplifiée pour correspondre aux constantes du frontend)
+    
+    # Détection de l'année d'étude (1, 2, 3)
+    # Patterns: SEI1, SEI2, SEI3, 1ere, 2eme, 3eme, AN1, AN2, AN3, A1, A2, A3
     name_upper = folder_name.upper()
+    match_etude = re.search(r'(?:SEI|NA|MTO?|AN|A)[\s_-]?([123])|([123])(?:ERE|EME|ÈME|E)\.?\s*ANNEE', name_upper)
+    if match_etude:
+        annee_etude = int(match_etude.group(1) or match_etude.group(2))
+    else:
+        # Essai de trouver un chiffre isolé (ex: 1, 2, 3) dans le nom du dossier
+        match_num = re.search(r'(?<![0-9])([123])(?![0-9])', folder_name)
+        if match_num:
+            annee_etude = int(match_num.group(1))
+        
+    # Extraction du cycle
     if 'IEAMAC' in name_upper:
         if 'SEI' in name_upper: cycle = "IEAMAC-SEI"
         elif 'NA' in name_upper: cycle = "IEAMAC-NA"
@@ -75,7 +89,7 @@ def parse_cycle_annee(folder_name: str):
         if 'NA' in name_upper: cycle = "T-NA"
         elif 'M' in name_upper: cycle = "T-M"
 
-    return cycle, annee
+    return cycle, annee, annee_etude
 
 def list_drive_files(service, parent_id: str) -> List[Dict]:
     """Récupère tous les fichiers/dossiers enfants d'un dossier donné."""
@@ -139,7 +153,7 @@ async def sync_drive_to_db(standalone=False):
             if l1['mimeType'] == 'application/vnd.google-apps.folder':
                 # Si le nom contient une année ou "annee", c'est probablement le niveau "Cycle/Année"
                 if re.search(r'(20\d{2}|annee|année)', l1['name'].lower()):
-                    cycle, annee = parse_cycle_annee(l1['name'])
+                    cycle, annee, annee_etude = parse_cycle_annee(l1['name'])
                     
                     level2_items = list_drive_files(service, l1['id'])
                     for l2 in level2_items:
@@ -149,18 +163,18 @@ async def sync_drive_to_db(standalone=False):
                             files = list_drive_files(service, l2['id'])
                             for f in files:
                                 if f['mimeType'] != 'application/vnd.google-apps.folder':
-                                    res = await process_and_insert_file(docs_coll, f, matiere, cycle, annee)
+                                    res = await process_and_insert_file(docs_coll, f, matiere, cycle, annee, annee_etude)
                                     if res: total_inserted += 1
                                     else: total_skipped += 1
                                     
                 else:
                     matiere = l1['name']
-                    cycle, annee = parse_cycle_annee(root_name)
+                    cycle, annee, annee_etude = parse_cycle_annee(root_name)
                     
                     files = list_drive_files(service, l1['id'])
                     for f in files:
                         if f['mimeType'] != 'application/vnd.google-apps.folder':
-                            res = await process_and_insert_file(docs_coll, f, matiere, cycle, annee)
+                            res = await process_and_insert_file(docs_coll, f, matiere, cycle, annee, annee_etude)
                             if res: total_inserted += 1
                             else: total_skipped += 1
 
@@ -172,12 +186,15 @@ async def sync_drive_to_db(standalone=False):
         
     return True, f"Synchronisation terminée. {total_inserted} documents ajoutés. {total_skipped} déjà existants."
 
-async def process_and_insert_file(docs_coll, file_item, matiere, cycle, annee) -> bool:
+async def process_and_insert_file(docs_coll, file_item, matiere, cycle, annee, annee_etude=None) -> bool:
     file_name = file_item['name']
     file_url = file_item.get('webViewLink', '')
     
     existing = await docs_coll.find_one({"file_url": file_url})
     if existing:
+        # Mettre à jour annee_etude si elle n'était pas définie auparavant
+        if annee_etude is not None and existing.get('annee_etude') is None:
+            await docs_coll.update_one({"_id": existing["_id"]}, {"$set": {"annee_etude": annee_etude}})
         return False
         
     doc_type = determine_type(file_name)
@@ -196,6 +213,7 @@ async def process_and_insert_file(docs_coll, file_item, matiere, cycle, annee) -
         "matiere": matiere,
         "cycle": cycle,
         "annee": annee,
+        "annee_etude": annee_etude,  # Niveau d'étude (1, 2, 3 ou None pour tous)
         "file_url": file_url,
         "uploaded_by": "System (Drive Sync)",
         "created_at": datetime.now().isoformat()

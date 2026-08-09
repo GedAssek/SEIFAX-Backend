@@ -43,6 +43,7 @@ def serialize_document(doc: dict) -> dict:
         "matiere": doc.get("matiere", ""),
         "cycle": doc.get("cycle", ""),
         "annee": doc.get("annee"),
+        "annee_etude": doc.get("annee_etude"),  # Niveau d'étude: 1, 2, 3 ou None
         "file_url": file_url,
         "source": "drive" if not doc.get("file_name") else "admin",
         "uploaded_by": doc.get("uploaded_by", "Admin"),
@@ -58,6 +59,7 @@ async def list_documents(
     cycle: Optional[str] = Query(None),
     matiere: Optional[str] = Query(None),
     annee: Optional[int] = Query(None),
+    annee_etude: Optional[int] = Query(None),  # Niveau d'étude (1, 2, 3)
     q: Optional[str] = Query(None),  # Recherche textuelle libre
     _: dict = Depends(get_current_user)  # Authentification requise
 ):
@@ -73,12 +75,21 @@ async def list_documents(
         query["matiere"] = {"$regex": matiere, "$options": "i"}
     if annee:
         query["annee"] = annee
+    if annee_etude:
+        # Filtrer par année d'étude, mais inclure aussi les docs sans restriction (annee_etude = None)
+        query["$or"] = [{"annee_etude": annee_etude}, {"annee_etude": None}]
     # Recherche textuelle sur titre ET matiere
     if q:
-        query["$or"] = [
+        text_query = [
             {"titre": {"$regex": q, "$options": "i"}},
             {"matiere": {"$regex": q, "$options": "i"}},
         ]
+        if "$or" in query:
+            # Combiner les deux $or avec $and
+            existing_or = query.pop("$or")
+            query["$and"] = [{"$or": existing_or}, {"$or": text_query}]
+        else:
+            query["$or"] = text_query
 
     cursor = db.documents.find(query).sort("created_at", -1)
     results = []
@@ -99,6 +110,7 @@ async def add_document(
     matiere: str = Form(...),
     cycle: str = Form(...),
     annee: int = Form(...),
+    annee_etude: Optional[int] = Form(None),  # 1, 2 ou 3
     categorie_eval: Optional[str] = Form(None), # interro, compo, examen
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = None,
@@ -125,6 +137,7 @@ async def add_document(
         "matiere": matiere,
         "cycle": cycle,
         "annee": annee,
+        "annee_etude": annee_etude,  # Niveau d'étude (1, 2, 3 ou None = tous)
         "file_name": safe_name,
         "uploaded_by": admin["username"],
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -150,6 +163,7 @@ async def update_document(
     matiere: Optional[str] = Form(None),
     cycle: Optional[str] = Form(None),
     annee: Optional[int] = Form(None),
+    annee_etude: Optional[int] = Form(None),
     file: Optional[UploadFile] = File(None),
     admin: dict = Depends(get_admin_user)
 ):
@@ -165,6 +179,7 @@ async def update_document(
     if matiere: update_data["matiere"] = matiere
     if cycle: update_data["cycle"] = cycle
     if annee: update_data["annee"] = annee
+    if annee_etude is not None: update_data["annee_etude"] = annee_etude
 
     if file and file.filename:
         if not file.filename.lower().endswith(".pdf"):
