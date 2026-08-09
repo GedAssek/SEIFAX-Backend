@@ -11,13 +11,28 @@ import os
 
 from database.db import connect_db, close_db
 from routes import auth, epreuves, infos, subjects, documents, admin, heures
+import asyncio
+from utils.sync_drive import sync_drive_to_db
 
+
+# ─── Tâche de synchronisation en arrière-plan ─────────────────────────────────
+async def background_sync_task():
+    while True:
+        # Attendre un peu avant la première synchro (1 min)
+        await asyncio.sleep(60)
+        print("[Background Sync] Lancement de la synchronisation Drive...")
+        success, message = await sync_drive_to_db()
+        print(f"[Background Sync] Résultat: {message}")
+        # Relancer toutes les 12 heures (43200 secondes)
+        await asyncio.sleep(43200)
 
 # ─── Cycle de vie de l'application ─────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
+    task = asyncio.create_task(background_sync_task())
     yield
+    task.cancel()
     await close_db()
 
 
