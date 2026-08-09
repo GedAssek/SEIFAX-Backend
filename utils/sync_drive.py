@@ -93,28 +93,27 @@ def parse_cycle_annee(folder_name: str):
 
 async def list_drive_files(service, parent_id: str) -> List[Dict]:
     """Récupère tous les fichiers/dossiers enfants d'un dossier donné (non-bloquant)."""
-    def _fetch():
-        results = []
-        page_token = None
-        while True:
-            try:
-                response = service.files().list(
-                    q=f"'{parent_id}' in parents and trashed=false",
-                    spaces='drive',
-                    fields='nextPageToken, files(id, name, mimeType, webViewLink, createdTime)',
-                    pageToken=page_token
-                ).execute()
-                
-                for file in response.get('files', []):
-                    results.append(file)
-                page_token = response.get('nextPageToken', None)
-                if page_token is None:
-                    break
-            except Exception as e:
-                print(f"Erreur Drive API pour le dossier {parent_id}: {e}")
+    results = []
+    page_token = None
+    while True:
+        try:
+            await asyncio.sleep(0) # Rend la main à la boucle d'événements
+            response = service.files().list(
+                q=f"'{parent_id}' in parents and trashed=false",
+                spaces='drive',
+                fields='nextPageToken, files(id, name, mimeType, webViewLink, createdTime)',
+                pageToken=page_token
+            ).execute()
+            
+            for file in response.get('files', []):
+                results.append(file)
+            page_token = response.get('nextPageToken', None)
+            if page_token is None:
                 break
-        return results
-    return await asyncio.to_thread(_fetch)
+        except Exception as e:
+            print(f"Erreur Drive API pour le dossier {parent_id}: {e}")
+            raise e
+    return results
 
 async def sync_drive_to_db(standalone=False):
     try:
@@ -142,7 +141,8 @@ async def sync_drive_to_db(standalone=False):
     for root_id in ROOT_FOLDER_IDS:
         print(f"Analyse de la racine: {root_id}")
         try:
-            root_info = await asyncio.to_thread(lambda: service.files().get(fileId=root_id, fields='name').execute())
+            await asyncio.sleep(0)
+            root_info = service.files().get(fileId=root_id, fields='name').execute()
             root_name = root_info.get('name', 'Inconnu')
         except Exception as e:
             print(f"Failed to get root_info for {root_id}: {e}")
@@ -218,7 +218,8 @@ async def fix_annee_etude_only(standalone=False):
 
     for root_id in ROOT_FOLDER_IDS:
         try:
-            root_info = await asyncio.to_thread(lambda: service.files().get(fileId=root_id, fields='name').execute())
+            await asyncio.sleep(0)
+            root_info = service.files().get(fileId=root_id, fields='name').execute()
             root_name = root_info.get('name', 'Inconnu')
         except Exception as e:
             print(f"Erreur racine {root_id}: {e}")
