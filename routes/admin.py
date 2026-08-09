@@ -154,3 +154,22 @@ async def trigger_fix_annee_etude(admin: dict = Depends(get_admin_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ─── POST /api/admin/fix-annee-direct ──────────────────────────────────────────
+@router.post("/fix-annee-direct")
+async def trigger_fix_annee_direct(admin: dict = Depends(get_admin_user)):
+    """
+    Corrige annee_etude sur tous les documents existants en base, basé sur
+    le nom de la matière — sans connexion à Google Drive. Solution de secours
+    quand les credentials Drive sont invalides.
+    """
+    try:
+        from utils.sync_drive import fix_annee_etude_direct
+        success, message = await fix_annee_etude_direct()
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+        return {"message": message}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+

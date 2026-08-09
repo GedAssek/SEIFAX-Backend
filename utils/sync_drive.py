@@ -312,5 +312,169 @@ async def process_and_insert_file(docs_coll, file_item, matiere, cycle, annee, a
     await docs_coll.insert_one(doc)
     return True
 
+# ─── Mapping matière → année d'étude (EAC-SEI) ──────────────────────────────
+# Ce mapping permet de corriger annee_etude sans connexion à Google Drive
+MATIERE_ANNEE_MAP_RAW = {
+    # === 1ère ANNÉE (fondamentaux) ===
+    1: [
+        'ELECTRONIQUE FONDAMENTALE', 'ELECTRONIQUE FONDAMENTALES', 'TP ELECTRONIQUE FONDAMENTALE',
+        '\u00c9LECTRONIQUE FONDAMENTALES',
+        'CIRCUITS ELECTRIQUES', 'ELECTRICITE GENERAL',
+        'ALGORITHME ET PROGRAMMATION', "ALGORITHME ET PROGRAMMATION 'C'",
+        'BUREAUTIQUE', 'INFORMATIQUE',
+        'ANGLAIS GENERAL', 'ANGLAIS TECHNIQUE', 'ANGLAIS TECHNIQUE ET PROFESSIONNEL',
+        'SECOURISME',
+        'REDACTION ADMINISTRATIVE', 'RÉDACTION ADMINISTRATIVE', 'R\u00c9DACTION ADMINISTRATIVE',
+        'AOP',
+        'ELECTRONIQUE NUMERIQUE',
+        'MICROPROCESSEUR-MICROCONTROLEUR', 'MICROPROCESEUR-MICROCONTROLLEUR',
+        'MACHINE ELECTRIQUE',
+        'ELECTRONIQUE DE PUISSANCE',
+        'TECHNOLOGIES,MATERIELS ET COMPOSANTS ELECTRIQUES',
+        'APPAREILS DE MESURE POUR ELECTRICIEN',
+        'APPAREILS DE MESURE POUR ELECTRONICIEN',
+        'MATERIEL ELECTRIQUE',
+        'ARCHITECTURE ET CONFIGURATION DES PC', 'ARCHITECHTURE ET CONFIG PC',
+        'FACTEURS HUMAINS',
+        'GESTION DE CHANTIER ( CONDUITE ATTITUDE PREVENTION DES ACCIDENTS', 'GESTION DE CHANTIER',
+        'ANNEXES',
+    ],
+    # === 2ème ANNÉE (transmission, navigation, radio) ===
+    2: [
+        'ANTENNES',
+        'EMISSION-RECEPTION', 'EMISSION RECEPTION',
+        'LIGNES ET HYPERFREQUENCES',
+        'PROPAGATION EN ESPACE LIBRE',
+        'VOR',
+        'ILS',
+        'DME',
+        'GNSS',
+        'NAVIGATION',
+        'METEOROLOGIE',
+        'ADS', 'ADS ALABE',
+        'MULTILATERATION', 'MLAT',
+        'BALISAGE LUMINEUX',
+        'CHAINE RADIO',
+        'EQUIPEMENT VHF',
+        'AEROTECHNIQUE',
+        "COURS DE SAUVETAGE ET DE LUTTE  CONTRE L'INCENDIE SUR LES AEROPORTS",
+        'FAISCEAU HERTZIEN',
+        'AUTOMATIQUE',
+        'TECHNIQUES SATELLITAIRES', 'TECHNIQUE SATELLITAIRE',
+        'TRANSMISSION DES DONNÉES', 'TRANSMISSION DES DONNEES', 'TRANSMISSION DES DONN\u00c9ES',
+        'TRANSPORT DES DONNEES',
+        'RADAR MTO', 'RADIOSONDAGE', 'RADIOSONDAGE MTO', 'RADAR METEO', 'RADAR M\u00c9T\u00c9O',
+        "SYSTEME DE PRODUCTION ET DE GESTION D'ENERGIE ELECTRIQUE",
+        'TRANSPORT ET DISTRIBUTION \u00c9LECTRIQUE', 'TRANSPORT ET DISTRIBUTION ELECTRIQUE',
+    ],
+    # === 3ème ANNÉE (spécialisation, systèmes avancés) ===
+    3: [
+        'OIACM', 'COURS OIACM',
+        'SAAPI',
+        'SAOMA',
+        'SURVEILLANCE',
+        'RCA',
+        'COMMUNICATION ATM',
+        'SSLI',
+        'INTRODUCTION AU RESEAU', 'RESEAUX',
+        'LES PROTOCOLES',
+        'RESEAU NATIONAUX', 'RESEAUX INTERNATIONAUX',
+        'BASE DE DONNEES',
+        'SGBD',
+        "SYS D'EXPLOITATION ( LINUX-WINDOWS )",
+        'SE LINUX',
+        'PARE-FEU',
+        'VPN',
+        'ROUTEUR',
+        'TELEPHONIE',
+        'COMMUTATION VOIX ET DONNEES',
+        'COMMUTATEUR DE MESSAGES',
+        'SYST DE CHAINES DE RADIOTELEPHONIE ( VCCS )',
+        'ETUDE DE MATERIELS-EQUIPMNTS VSAT ET ENERGIE',
+        'ETUDES DE MATERIELS MULTIPLEXEURS ET COMMUTATEUR',
+        'TRAITEMENT DE DONNEES DE SURVEILLANCE',
+        'RADAR DE CONTROLE AERIEN', 'RADAR DU CONTROLE AERIEN',
+        "SYSTEME DE GESTION DE L'INFORMATION AERONAUTIQUE",
+        'GESTION DE LA S\u00c9CURIT\u00c9', 'GESTION DE LA SECURITE',
+        'GESTION DES RISQUES',
+        'MAINTENANCE-GMAO', 'MAINTENANCE',
+        'SECURITE', 'SECURITE ET SYSTEMES INFORMATIQUES',
+        "STAGE D'IMMERSION",
+    ],
+}
+
+# Construire un dict plat: matiere_upper → annee
+_MATIERE_ANNEE_FLAT: Dict[str, int] = {}
+for _annee, _matieres in MATIERE_ANNEE_MAP_RAW.items():
+    for _m in _matieres:
+        _MATIERE_ANNEE_FLAT[_m.strip().upper()] = _annee
+
+
+async def fix_annee_etude_direct(standalone=False) -> tuple:
+    """
+    Corrige l'annee_etude de tous les documents en BD basé sur le nom de
+    la matière — sans connexion à Google Drive. Utilise le mapping
+    MATIERE_ANNEE_MAP_RAW défini dans ce fichier.
+    """
+    if standalone:
+        try:
+            await connect_db()
+        except Exception:
+            pass
+
+    db = get_db()
+    if db is None:
+        return False, "Database not connected"
+
+    docs_coll = db["documents"]
+    total_updated = 0
+    total_skipped_no_match = 0
+    total_skipped_already = 0
+
+    async for doc in docs_coll.find({}):
+        matiere = (doc.get("matiere") or "").strip().upper()
+        if not matiere:
+            total_skipped_no_match += 1
+            continue
+
+        # Correspondance exacte
+        annee = _MATIERE_ANNEE_FLAT.get(matiere)
+
+        # Correspondance partielle si pas de correspondance exacte
+        if annee is None:
+            for key, val in _MATIERE_ANNEE_FLAT.items():
+                if key in matiere or matiere in key:
+                    annee = val
+                    break
+
+        if annee is None:
+            total_skipped_no_match += 1
+            print(f"  [?] Matière non reconnue: {matiere!r}")
+            continue
+
+        current = doc.get("annee_etude")
+        if current == annee:
+            total_skipped_already += 1
+            continue
+
+        await docs_coll.update_one(
+            {"_id": doc["_id"]},
+            {"$set": {"annee_etude": annee}}
+        )
+        total_updated += 1
+
+    if standalone:
+        try:
+            await close_db()
+        except Exception:
+            pass
+
+    return True, (
+        f"Correction directe terminée. {total_updated} documents mis à jour. "
+        f"{total_skipped_already} déjà corrects. "
+        f"{total_skipped_no_match} matières non reconnues."
+    )
+
 if __name__ == "__main__":
     asyncio.run(sync_drive_to_db(standalone=True))
+
