@@ -100,19 +100,18 @@ def list_drive_files(service, parent_id: str) -> List[Dict]:
             break
     return results
 
-async def sync_drive_to_db():
+async def sync_drive_to_db(standalone=False):
     try:
         service = get_drive_service()
     except Exception as e:
         print(f"Erreur d'initialisation Google Drive: {e}")
         return False, str(e)
 
-    # Note: connect_db and get_db logic
-    try:
-        await connect_db()
-    except Exception as e:
-        # Ignore if already connected in FastApi context
-        pass
+    if standalone:
+        try:
+            await connect_db()
+        except Exception as e:
+            pass
         
     db = get_db()
     if db is None:
@@ -165,10 +164,11 @@ async def sync_drive_to_db():
                             if res: total_inserted += 1
                             else: total_skipped += 1
 
-    try:
-        await close_db()
-    except:
-        pass
+    if standalone:
+        try:
+            await close_db()
+        except:
+            pass
         
     return True, f"Synchronisation terminée. {total_inserted} documents ajoutés. {total_skipped} déjà existants."
 
@@ -205,4 +205,4 @@ async def process_and_insert_file(docs_coll, file_item, matiere, cycle, annee) -
     return True
 
 if __name__ == "__main__":
-    asyncio.run(sync_drive_to_db())
+    asyncio.run(sync_drive_to_db(standalone=True))
