@@ -135,3 +135,22 @@ async def trigger_sync_drive(admin: dict = Depends(get_admin_user)):
         return {"message": message}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── POST /api/admin/fix-annee-etude ─────────────────────────────────────────
+@router.post("/fix-annee-etude")
+async def trigger_fix_annee_etude(admin: dict = Depends(get_admin_user)):
+    """
+    Parcourt Google Drive et corrige annee_etude sur tous les documents
+    existants en base (sans créer de doublons). Utile pour corriger
+    des documents importés avant la correction du parsing des noms de dossiers.
+    """
+    try:
+        from utils.sync_drive import fix_annee_etude_only
+        success, message = await fix_annee_etude_only()
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+        return {"message": message}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

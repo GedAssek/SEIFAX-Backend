@@ -65,7 +65,7 @@ def parse_cycle_annee(folder_name: str):
     # Détection de l'année d'étude (1, 2, 3)
     # Patterns: SEI1, SEI2, SEI3, 1ere, 2eme, 3eme, AN1, AN2, AN3, A1, A2, A3
     name_upper = folder_name.upper()
-    match_etude = re.search(r'(?:SEI|NA|MTO?|AN|A)[\s_-]?([123])|([123])(?:ERE|EME|ÈME|E)\.?\s*ANNEE', name_upper)
+    match_etude = re.search(r'(?:SEI|NA|MTO?|AN|A)[\s_-]?([123])|([123])(?:ERE|EME|ÈME|E)[\s_-]*ANN[EÉ]E', name_upper)
     if match_etude:
         annee_etude = int(match_etude.group(1) or match_etude.group(2))
     else:
@@ -142,7 +142,8 @@ async def sync_drive_to_db(standalone=False):
         try:
             root_info = service.files().get(fileId=root_id, fields='name').execute()
             root_name = root_info.get('name', 'Inconnu')
-        except:
+        except Exception as e:
+            print(f"Failed to get root_info for {root_id}: {e}")
             continue
             
         print(f"  -> Nom du dossier racine: {root_name}")
@@ -184,7 +185,93 @@ async def sync_drive_to_db(standalone=False):
         except:
             pass
         
-    return True, f"Synchronisation terminée. {total_inserted} documents ajoutés. {total_skipped} déjà existants."
+    return True, f"Synchronisation terminée. {total_inserted} documents ajoutés. {total_skipped} déjà existants (annee_etude mis à jour si nécessaire)."
+
+
+async def fix_annee_etude_only(standalone=False):
+    """
+    Parcourt Google Drive et met à jour annee_etude de TOUS les documents
+    existants en base, sans insérer de nouveaux. Utile pour corriger
+    des documents importés avant la correction du regex.
+    """
+    try:
+        service = get_drive_service()
+    except Exception as e:
+        print(f"Erreur d'initialisation Google Drive: {e}")
+        return False, str(e)
+
+    if standalone:
+        try:
+            await connect_db()
+        except Exception as e:
+            pass
+
+    db = get_db()
+    if db is None:
+        return False, "Database not connected"
+
+    docs_coll = db["documents"]
+    total_updated = 0
+    total_skipped = 0
+
+    for root_id in ROOT_FOLDER_IDS:
+        try:
+            root_info = service.files().get(fileId=root_id, fields='name').execute()
+            root_name = root_info.get('name', 'Inconnu')
+        except Exception as e:
+            print(f"Erreur racine {root_id}: {e}")
+            continue
+
+        print(f"  -> Fix annee_etude dans: {root_name}")
+        level1_items = list_drive_files(service, root_id)
+
+        for l1 in level1_items:
+            if l1['mimeType'] == 'application/vnd.google-apps.folder':
+                if re.search(r'(20\d{2}|annee|ann.e)', l1['name'].lower()):
+                    cycle, annee, annee_etude = parse_cycle_annee(l1['name'])
+                    level2_items = list_drive_files(service, l1['id'])
+                    for l2 in level2_items:
+                        if l2['mimeType'] == 'application/vnd.google-apps.folder':
+                            files = list_drive_files(service, l2['id'])
+                            for f in files:
+                                if f['mimeType'] != 'application/vnd.google-apps.folder':
+                                    file_url = f.get('webViewLink', '')
+                                    if not file_url:
+                                        continue
+                                    existing = await docs_coll.find_one({"file_url": file_url})
+                                    if existing and annee_etude is not None:
+                                        await docs_coll.update_one(
+                                            {"_id": existing["_id"]},
+                                            {"$set": {"annee_etude": annee_etude}}
+                                        )
+                                        total_updated += 1
+                                    else:
+                                        total_skipped += 1
+                else:
+                    cycle, annee, annee_etude = parse_cycle_annee(root_name)
+                    files = list_drive_files(service, l1['id'])
+                    for f in files:
+                        if f['mimeType'] != 'application/vnd.google-apps.folder':
+                            file_url = f.get('webViewLink', '')
+                            if not file_url:
+                                continue
+                            existing = await docs_coll.find_one({"file_url": file_url})
+                            if existing and annee_etude is not None:
+                                await docs_coll.update_one(
+                                    {"_id": existing["_id"]},
+                                    {"$set": {"annee_etude": annee_etude}}
+                                )
+                                total_updated += 1
+                            else:
+                                total_skipped += 1
+
+    if standalone:
+        try:
+            await close_db()
+        except:
+            pass
+
+    return True, f"Correction terminée. {total_updated} documents mis à jour. {total_skipped} ignorés (annee_etude déjà None dans Drive ou doc non trouvé)."
 
 async def process_and_insert_file(docs_coll, file_item, matiere, cycle, annee, annee_etude=None) -> bool:
     file_name = file_item['name']
