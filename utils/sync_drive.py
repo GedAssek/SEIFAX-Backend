@@ -91,28 +91,30 @@ def parse_cycle_annee(folder_name: str):
 
     return cycle, annee, annee_etude
 
-def list_drive_files(service, parent_id: str) -> List[Dict]:
-    """Récupère tous les fichiers/dossiers enfants d'un dossier donné."""
-    results = []
-    page_token = None
-    while True:
-        try:
-            response = service.files().list(
-                q=f"'{parent_id}' in parents and trashed=false",
-                spaces='drive',
-                fields='nextPageToken, files(id, name, mimeType, webViewLink, createdTime)',
-                pageToken=page_token
-            ).execute()
-            
-            for file in response.get('files', []):
-                results.append(file)
-            page_token = response.get('nextPageToken', None)
-            if page_token is None:
+async def list_drive_files(service, parent_id: str) -> List[Dict]:
+    """Récupère tous les fichiers/dossiers enfants d'un dossier donné (non-bloquant)."""
+    def _fetch():
+        results = []
+        page_token = None
+        while True:
+            try:
+                response = service.files().list(
+                    q=f"'{parent_id}' in parents and trashed=false",
+                    spaces='drive',
+                    fields='nextPageToken, files(id, name, mimeType, webViewLink, createdTime)',
+                    pageToken=page_token
+                ).execute()
+                
+                for file in response.get('files', []):
+                    results.append(file)
+                page_token = response.get('nextPageToken', None)
+                if page_token is None:
+                    break
+            except Exception as e:
+                print(f"Erreur Drive API pour le dossier {parent_id}: {e}")
                 break
-        except Exception as e:
-            print(f"Erreur Drive API pour le dossier {parent_id}: {e}")
-            break
-    return results
+        return results
+    return await asyncio.to_thread(_fetch)
 
 async def sync_drive_to_db(standalone=False):
     try:
@@ -140,7 +142,7 @@ async def sync_drive_to_db(standalone=False):
     for root_id in ROOT_FOLDER_IDS:
         print(f"Analyse de la racine: {root_id}")
         try:
-            root_info = service.files().get(fileId=root_id, fields='name').execute()
+            root_info = await asyncio.to_thread(lambda: service.files().get(fileId=root_id, fields='name').execute())
             root_name = root_info.get('name', 'Inconnu')
         except Exception as e:
             print(f"Failed to get root_info for {root_id}: {e}")
@@ -148,20 +150,20 @@ async def sync_drive_to_db(standalone=False):
             
         print(f"  -> Nom du dossier racine: {root_name}")
         
-        level1_items = list_drive_files(service, root_id)
+        level1_items = await list_drive_files(service, root_id)
         
         for l1 in level1_items:
             if l1['mimeType'] == 'application/vnd.google-apps.folder':
                 # Si le nom contient une année ou "annee", c'est probablement le niveau "Cycle/Année"
-                if re.search(r'(20\d{2}|annee|année)', l1['name'].lower()):
+                if re.search(r'(20\d{2}|annee|ann.e)', l1['name'].lower()):
                     cycle, annee, annee_etude = parse_cycle_annee(l1['name'])
                     
-                    level2_items = list_drive_files(service, l1['id'])
+                    level2_items = await list_drive_files(service, l1['id'])
                     for l2 in level2_items:
                         if l2['mimeType'] == 'application/vnd.google-apps.folder':
                             matiere = l2['name']
                             
-                            files = list_drive_files(service, l2['id'])
+                            files = await list_drive_files(service, l2['id'])
                             for f in files:
                                 if f['mimeType'] != 'application/vnd.google-apps.folder':
                                     res = await process_and_insert_file(docs_coll, f, matiere, cycle, annee, annee_etude)
@@ -172,7 +174,7 @@ async def sync_drive_to_db(standalone=False):
                     matiere = l1['name']
                     cycle, annee, annee_etude = parse_cycle_annee(root_name)
                     
-                    files = list_drive_files(service, l1['id'])
+                    files = await list_drive_files(service, l1['id'])
                     for f in files:
                         if f['mimeType'] != 'application/vnd.google-apps.folder':
                             res = await process_and_insert_file(docs_coll, f, matiere, cycle, annee, annee_etude)
@@ -216,23 +218,23 @@ async def fix_annee_etude_only(standalone=False):
 
     for root_id in ROOT_FOLDER_IDS:
         try:
-            root_info = service.files().get(fileId=root_id, fields='name').execute()
+            root_info = await asyncio.to_thread(lambda: service.files().get(fileId=root_id, fields='name').execute())
             root_name = root_info.get('name', 'Inconnu')
         except Exception as e:
             print(f"Erreur racine {root_id}: {e}")
             continue
 
         print(f"  -> Fix annee_etude dans: {root_name}")
-        level1_items = list_drive_files(service, root_id)
+        level1_items = await list_drive_files(service, root_id)
 
         for l1 in level1_items:
             if l1['mimeType'] == 'application/vnd.google-apps.folder':
                 if re.search(r'(20\d{2}|annee|ann.e)', l1['name'].lower()):
                     cycle, annee, annee_etude = parse_cycle_annee(l1['name'])
-                    level2_items = list_drive_files(service, l1['id'])
+                    level2_items = await list_drive_files(service, l1['id'])
                     for l2 in level2_items:
                         if l2['mimeType'] == 'application/vnd.google-apps.folder':
-                            files = list_drive_files(service, l2['id'])
+                            files = await list_drive_files(service, l2['id'])
                             for f in files:
                                 if f['mimeType'] != 'application/vnd.google-apps.folder':
                                     file_url = f.get('webViewLink', '')
@@ -249,7 +251,7 @@ async def fix_annee_etude_only(standalone=False):
                                         total_skipped += 1
                 else:
                     cycle, annee, annee_etude = parse_cycle_annee(root_name)
-                    files = list_drive_files(service, l1['id'])
+                    files = await list_drive_files(service, l1['id'])
                     for f in files:
                         if f['mimeType'] != 'application/vnd.google-apps.folder':
                             file_url = f.get('webViewLink', '')
