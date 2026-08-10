@@ -18,12 +18,11 @@ from utils.sync_drive import sync_drive_to_db
 # ─── Tâche de synchronisation en arrière-plan ─────────────────────────────────
 async def background_sync_task():
     while True:
-        # Attendre un peu avant la première synchro (1 min)
-        await asyncio.sleep(60)
         print("[Background Sync] Lancement de la synchronisation Drive...")
         success, message = await sync_drive_to_db()
         print(f"[Background Sync] Résultat: {message}")
-        # Relancer toutes les 12 heures (43200 secondes)
+        # La première synchronisation est immédiate ; les suivantes ont lieu
+        # toutes les 12 heures (43200 secondes).
         await asyncio.sleep(43200)
 
 # ─── Cycle de vie de l'application ─────────────────────────────────────────

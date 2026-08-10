@@ -136,6 +136,7 @@ async def sync_drive_to_db(standalone=False):
     
     total_inserted = 0
     total_skipped = 0
+    failed_roots = []
     
     for root_id in ROOT_FOLDER_IDS:
         print(f"Analyse de la racine: {root_id}")
@@ -145,6 +146,7 @@ async def sync_drive_to_db(standalone=False):
             root_name = root_info.get('name', 'Inconnu')
         except Exception as e:
             print(f"Failed to get root_info for {root_id}: {e}")
+            failed_roots.append(root_id)
             continue
             
         print(f"  -> Nom du dossier racine: {root_name}")
@@ -186,6 +188,14 @@ async def sync_drive_to_db(standalone=False):
         except:
             pass
         
+    if failed_roots:
+        return False, (
+            "Synchronisation Drive incomplète : "
+            f"{len(failed_roots)} dossier(s) racine inaccessible(s). "
+            "Vérifiez les identifiants du compte de service Google. "
+            f"{total_inserted} documents ajoutés, {total_skipped} déjà existants."
+        )
+
     return True, f"Synchronisation terminée. {total_inserted} documents ajoutés. {total_skipped} déjà existants (annee_etude mis à jour si nécessaire)."
 
 
