@@ -76,20 +76,16 @@ async def list_documents(
     if annee:
         query["annee"] = annee
     if annee_etude:
-        # Filtrer par année d'étude, mais inclure aussi les docs sans restriction (annee_etude = None)
-        query["$or"] = [{"annee_etude": annee_etude}, {"annee_etude": None}]
+        # Ne pas inclure les anciennes données sans niveau : elles pouvaient
+        # appartenir à une autre année et provoquaient le mélange observé.
+        query["annee_etude"] = annee_etude
     # Recherche textuelle sur titre ET matiere
     if q:
         text_query = [
             {"titre": {"$regex": q, "$options": "i"}},
             {"matiere": {"$regex": q, "$options": "i"}},
         ]
-        if "$or" in query:
-            # Combiner les deux $or avec $and
-            existing_or = query.pop("$or")
-            query["$and"] = [{"$or": existing_or}, {"$or": text_query}]
-        else:
-            query["$or"] = text_query
+        query["$or"] = text_query
 
     cursor = db.documents.find(query).sort("created_at", -1)
     results = []

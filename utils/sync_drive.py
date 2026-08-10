@@ -65,14 +65,13 @@ def parse_cycle_annee(folder_name: str):
     # Détection de l'année d'étude (1, 2, 3)
     # Patterns: SEI1, SEI2, SEI3, 1ere, 2eme, 3eme, AN1, AN2, AN3, A1, A2, A3
     name_upper = folder_name.upper()
-    match_etude = re.search(r'(?:SEI|NA|MTO?|AN|A)[\s_-]?([123])|([123])(?:ERE|EME|ÈME|E)[\s_-]*ANN[EÉ]E', name_upper)
+    # Chercher d'abord une forme explicite comme "2 annee", puis SEI1.
+    # Le (?!\d) empêche notamment de confondre "SEI2022" avec "SEI2".
+    match_ordinal = re.search(r'(?<!\d)([123])\s*(?:ERE|ER|[ÈÉ]?ME|E)?\s*ANN', name_upper)
+    match_cycle_level = re.search(r'(?:SEI|NA|MTO?|AN|A)[\s_-]?([123])(?!\d)', name_upper)
+    match_etude = match_ordinal or match_cycle_level
     if match_etude:
-        annee_etude = int(match_etude.group(1) or match_etude.group(2))
-    else:
-        # Essai de trouver un chiffre isolé (ex: 1, 2, 3) dans le nom du dossier
-        match_num = re.search(r'(?<![0-9])([123])(?![0-9])', folder_name)
-        if match_num:
-            annee_etude = int(match_num.group(1))
+        annee_etude = int(match_etude.group(1))
         
     # Extraction du cycle
     if 'IEAMAC' in name_upper:
@@ -282,8 +281,9 @@ async def process_and_insert_file(docs_coll, file_item, matiere, cycle, annee, a
     
     existing = await docs_coll.find_one({"file_url": file_url})
     if existing:
-        # Mettre à jour annee_etude si elle n'était pas définie auparavant
-        if annee_etude is not None and existing.get('annee_etude') is None:
+        # La structure Drive est la source de vérité, y compris après une
+        # ancienne synchronisation qui aurait attribué une mauvaise année.
+        if annee_etude is not None and existing.get('annee_etude') != annee_etude:
             await docs_coll.update_one({"_id": existing["_id"]}, {"$set": {"annee_etude": annee_etude}})
         return False
         
@@ -477,4 +477,3 @@ async def fix_annee_etude_direct(standalone=False) -> tuple:
 
 if __name__ == "__main__":
     asyncio.run(sync_drive_to_db(standalone=True))
-

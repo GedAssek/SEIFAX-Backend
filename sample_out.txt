@@ -1,0 +1,22 @@
+﻿[OK] Pinged your deployment. ConnectÚ Ó MongoDB : lefaxeur_db
+Matiere: ELECTRONIQUE FONDAMENTALE
+file_url: None
+annee_etude: None
+---
+Matiere: ELECTRONIQUE FONDAMENTALE
+file_url: None
+annee_etude: None
+---
+Matiere: ANGLAIS GENERAL
+file_url: https://drive.google.com/file/d/1RoeotCYchaF2Uz5wpCCor9DowKWqeIi6/view?usp=drivesdk
+annee_etude: None
+---
+Matiere: ANGLAIS GENERAL
+file_url: https://drive.google.com/file/d/11MXLK0Cbd8ie059jvXjJNZAN-EO-5ke5/view?usp=drivesdk
+annee_etude: None
+---
+Matiere: ANGLAIS GENERAL
+file_url: https://drive.google.com/file/d/15hbkvvDQv8pUff3KxVq9kHBq1Xck9lDP/view?usp=drivesdk
+annee_etude: None
+---
+[CLOSE] Connexion MongoDB fermee.
