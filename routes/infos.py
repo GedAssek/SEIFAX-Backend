@@ -29,6 +29,7 @@ def serialize_info(doc: dict) -> dict:
         "contenu": doc["contenu"],
         "auteur": doc.get("auteur", "LEFAXEUR"),
         "cycle": doc.get("cycle", "Général"),
+        "annee_etude": doc.get("annee_etude"),
         "created_at": doc.get("created_at", ""),
         "file_url": doc.get("file_url"),
         "file_type": doc.get("file_type"),
@@ -36,17 +37,44 @@ def serialize_info(doc: dict) -> dict:
     return result
 
 
+def normalize_annee_etude(value: Optional[str]) -> Optional[int]:
+    """Convertit la valeur du formulaire en année d'étude ou en ciblage global."""
+    if value is None or value.strip().lower() in {"", "all", "toutes", "null", "none"}:
+        return None
+
+    try:
+        annee_etude = int(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="annee_etude doit être 1, 2 ou 3") from exc
+
+    if annee_etude not in {1, 2, 3}:
+        raise HTTPException(status_code=422, detail="annee_etude doit être 1, 2 ou 3")
+    return annee_etude
+
+
 # ─── GET /api/infos ──────────────────────────────────────────────────────────
 @router.get("/")
 async def list_infos(
     cycle: Optional[str] = Query(None),
-    _: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user)
 ):
     db = get_db()
 
-    query = {}
+    filters = []
     if cycle:
-        query["cycle"] = {"$in": ["Général", cycle]}
+        filters.append({"cycle": {"$in": ["Général", cycle]}})
+
+    if current_user.get("role") == "student":
+        year_filters = [
+            {"annee_etude": {"$exists": False}},
+            {"annee_etude": None},
+        ]
+        annee_etude = current_user.get("annee")
+        if annee_etude in {1, 2, 3}:
+            year_filters.append({"annee_etude": annee_etude})
+        filters.append({"$or": year_filters})
+
+    query = {"$and": filters} if filters else {}
 
     cursor = db.infos.find(query).sort("created_at", -1)
     results = []
@@ -62,6 +90,7 @@ async def add_info(
     contenu: str = Form(...),
     background_tasks: BackgroundTasks = None,
     cycle: str = Form("Général"),
+    annee_etude: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     admin: dict = Depends(get_admin_user)
 ):
@@ -93,6 +122,7 @@ async def add_info(
         "contenu": contenu,
         "auteur": f"{admin['prenom']} {admin['nom']}",
         "cycle": cycle,
+        "annee_etude": normalize_annee_etude(annee_etude),
         "file_url": file_url,
         "file_type": file_type,
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -115,6 +145,7 @@ async def update_info(
     titre: Optional[str] = Form(None),
     contenu: Optional[str] = Form(None),
     cycle: Optional[str] = Form(None),
+    annee_etude: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     admin: dict = Depends(get_admin_user)
 ):
@@ -127,6 +158,8 @@ async def update_info(
     if titre: update_data["titre"] = titre
     if contenu: update_data["contenu"] = contenu
     if cycle: update_data["cycle"] = cycle
+    if annee_etude is not None:
+        update_data["annee_etude"] = normalize_annee_etude(annee_etude)
 
     if file and file.filename:
         ext = os.path.splitext(file.filename)[1].lower()

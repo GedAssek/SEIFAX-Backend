@@ -80,6 +80,7 @@ class InfoCreate(BaseModel):
     titre: str
     contenu: str
     cycle: Optional[str] = "Général"
+    annee_etude: Optional[int] = Field(None, ge=1, le=3)
 
 
 class InfoOut(BaseModel):
@@ -88,6 +89,7 @@ class InfoOut(BaseModel):
     contenu: str
     auteur: str
     cycle: Optional[str] = "Général"
+    annee_etude: Optional[int] = None
     created_at: str
     file_url: Optional[str] = None
     file_type: Optional[str] = None  # 'image' | 'pdf'
