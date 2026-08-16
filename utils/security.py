@@ -12,7 +12,9 @@ from fastapi import HTTPException, UploadFile, status
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", 10 * 1024 * 1024))
 _login_attempts: dict[str, deque[datetime]] = defaultdict(deque)
 LOGIN_WINDOW = timedelta(minutes=int(os.getenv("LOGIN_RATE_WINDOW_MINUTES", "15")))
-LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
+# Five failed attempts in the time window lock further attempts.  Keep this
+# fixed so a deployment environment cannot accidentally weaken the policy.
+LOGIN_MAX_ATTEMPTS = 5
 
 
 def _recent_attempts(key: str) -> deque[datetime]:
@@ -38,6 +40,48 @@ def record_failed_login(key: str) -> None:
 
 def clear_failed_logins(key: str) -> None:
     _login_attempts.pop(key, None)
+
+
+async def ensure_persistent_login_allowed(db, username: str) -> None:
+    """Check a MongoDB-backed lock, shared across server instances."""
+    now = datetime.utcnow()
+    attempt = await db.login_attempts.find_one({"username": username.lower()})
+    if not attempt:
+        return
+    locked_until = attempt.get("locked_until")
+    if locked_until and locked_until > now:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Try again later.",
+            headers={"Retry-After": str(max(1, int((locked_until - now).total_seconds())))},
+        )
+    if attempt.get("first_failure", now) + LOGIN_WINDOW <= now:
+        await db.login_attempts.delete_one({"_id": attempt["_id"]})
+
+
+async def record_persistent_failed_login(db, username: str, client_ip: str) -> None:
+    """Record a failed attempt and lock the account after five failures."""
+    now = datetime.utcnow()
+    key = username.lower()
+    attempt = await db.login_attempts.find_one({"username": key})
+    if not attempt or attempt.get("first_failure", now) + LOGIN_WINDOW <= now:
+        await db.login_attempts.update_one(
+            {"username": key},
+            {"$set": {"username": key, "first_failure": now, "failures": 1,
+                      "last_ip": client_ip, "expires_at": now + LOGIN_WINDOW},
+             "$unset": {"locked_until": ""}},
+            upsert=True,
+        )
+        return
+    failures = attempt.get("failures", 0) + 1
+    update = {"failures": failures, "last_ip": client_ip, "expires_at": now + LOGIN_WINDOW}
+    if failures >= LOGIN_MAX_ATTEMPTS:
+        update["locked_until"] = now + LOGIN_WINDOW
+    await db.login_attempts.update_one({"_id": attempt["_id"]}, {"$set": update})
+
+
+async def clear_persistent_failed_logins(db, username: str) -> None:
+    await db.login_attempts.delete_one({"username": username.lower()})
 
 
 def safe_object_id(value: str):

@@ -13,6 +13,7 @@ import os, shutil
 from database.db import get_db
 from routes.auth import get_current_user, get_admin_user
 from utils.email_sender import send_notification_email
+from utils.security import INFO_SIGNATURES, save_validated_upload
 
 router = APIRouter(prefix="/infos", tags=["Informations"])
 
@@ -65,6 +66,7 @@ async def list_infos(
         filters.append({"cycle": {"$in": ["Général", cycle]}})
 
     if current_user.get("role") == "student":
+        filters.append({"cycle": {"$in": ["Général", "General", current_user.get("cycle")]}})
         year_filters = [
             {"annee_etude": {"$exists": False}},
             {"annee_etude": None},
@@ -107,14 +109,9 @@ async def add_info(
                 detail=f"Type de fichier non supporté. Acceptés : PDF, JPG, PNG"
             )
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        safe_name = f"info_{timestamp}{ext}".replace(" ", "_")
-        file_path = os.path.join(UPLOAD_DIR_INFOS, safe_name)
+        safe_name, _ = await save_validated_upload(file, UPLOAD_DIR_INFOS, INFO_SIGNATURES)
 
-        with open(file_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-
-        file_url = f"/uploads/infos/{safe_name}"
+        file_url = f"/api/files/infos/{safe_name}"
         file_type = "pdf" if ext == ".pdf" else "image"
 
     doc = {
@@ -168,18 +165,13 @@ async def update_info(
         
         # Supprimer l'ancien fichier
         if doc.get("file_url"):
-            old_file_path = "." + doc["file_url"]
+            old_file_path = os.path.join(UPLOAD_DIR_INFOS, os.path.basename(doc["file_url"]))
             if os.path.exists(old_file_path):
                 os.remove(old_file_path)
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        safe_name = f"info_{timestamp}{ext}".replace(" ", "_")
-        file_path = os.path.join(UPLOAD_DIR_INFOS, safe_name)
-
-        with open(file_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
+        safe_name, _ = await save_validated_upload(file, UPLOAD_DIR_INFOS, INFO_SIGNATURES)
         
-        update_data["file_url"] = f"/uploads/infos/{safe_name}"
+        update_data["file_url"] = f"/api/files/infos/{safe_name}"
         update_data["file_type"] = "pdf" if ext == ".pdf" else "image"
 
     if update_data:
@@ -198,7 +190,7 @@ async def delete_info(info_id: str, admin: dict = Depends(get_admin_user)):
 
     # Supprimer le fichier physique s'il existe
     if doc.get("file_url"):
-        file_path = "." + doc["file_url"]
+        file_path = os.path.join(UPLOAD_DIR_INFOS, os.path.basename(doc["file_url"]))
         if os.path.exists(file_path):
             os.remove(file_path)
 

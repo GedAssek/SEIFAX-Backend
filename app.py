@@ -6,13 +6,12 @@ Documentation auto : http://localhost:8000/docs
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import os
 import logging
 
 from database.db import connect_db, close_db
-from routes import auth, epreuves, infos, subjects, documents, admin, heures
+from routes import auth, epreuves, infos, subjects, documents, admin, heures, files
 import asyncio
 from utils.sync_drive import sync_drive_to_db
 
@@ -43,8 +42,8 @@ app = FastAPI(
     description="API Backend pour la plateforme de ressources étudiantes LEFAXEUR",
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc"
+    docs_url="/docs" if os.getenv("EXPOSE_API_DOCS", "false").lower() == "true" else None,
+    redoc_url="/redoc" if os.getenv("EXPOSE_API_DOCS", "false").lower() == "true" else None,
 )
 
 
@@ -72,6 +71,10 @@ async def security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    if request.url.path.startswith("/api/"):
+        response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -85,7 +88,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 os.makedirs("uploads/epreuves", exist_ok=True)
 os.makedirs("uploads/infos", exist_ok=True)
 os.makedirs("uploads/documents", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 # ─── Inclusion des routes ───────────────────────────────────────────────────
@@ -96,6 +98,7 @@ app.include_router(subjects.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(heures.router, prefix="/api")
+app.include_router(files.router, prefix="/api")
 
 
 # ─── Route racine (test de santé) ───────────────────────────────────────────

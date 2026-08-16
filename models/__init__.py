@@ -26,7 +26,7 @@ class EvalType(str, Enum):
 # ─── Utilisateur ────────────────────────────────────────────────────────────
 class UserCreate(BaseModel):
     username: EmailStr = Field(..., description="Identifiant unique (doit être un email)")
-    password: str = Field(..., min_length=12, max_length=128)
+    password: str = Field(..., min_length=15, max_length=72)
     nom: str
     prenom: str
     email: EmailStr
@@ -37,6 +37,9 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def password_strength(cls, value: str) -> str:
+        common_passwords = {"Password123456", "Admin123456789", "Azerty123456789", "123456789012345"}
+        if value in common_passwords:
+            raise ValueError("Ce mot de passe est trop courant")
         if not (any(c.islower() for c in value) and any(c.isupper() for c in value)
                 and any(c.isdigit() for c in value)):
             raise ValueError("Le mot de passe doit contenir une minuscule, une majuscule et un chiffre")

@@ -5,3 +5,4 @@ __pycache__/
 uploads/
 # Clé privée Google : ne jamais publier.
 /credentials.json
+service-account*.json

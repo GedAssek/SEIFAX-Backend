@@ -13,6 +13,7 @@ import os, shutil
 
 from database.db import get_db
 from routes.auth import get_current_user, get_admin_user
+from utils.security import PDF_SIGNATURES, save_validated_upload
 
 router = APIRouter(prefix="/epreuves", tags=["Épreuves"])
 
@@ -28,7 +29,7 @@ def serialize_epreuve(doc: dict) -> dict:
         "cycle": doc["cycle"],
         "annee": doc["annee"],
         "description": doc.get("description", ""),
-        "file_url": f"/uploads/epreuves/{doc['file_name']}",
+        "file_url": f"/api/files/epreuves/{doc['file_name']}",
         "created_at": doc.get("created_at", "")
     }
 
@@ -74,12 +75,7 @@ async def add_epreuve(
     db = get_db()
 
     # Sauvegarder le fichier
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    safe_name = f"{cycle}_{matiere}_{annee}_{timestamp}.pdf".replace(" ", "_")
-    file_path = os.path.join(UPLOAD_DIR, safe_name)
-
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    safe_name, _ = await save_validated_upload(file, UPLOAD_DIR, PDF_SIGNATURES)
 
     doc = {
         "matiere": matiere,

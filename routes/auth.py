@@ -10,7 +10,11 @@ from datetime import datetime, timezone
 from database.db import get_db
 from models import UserCreate, UserLogin, UserOut, Token
 from utils.helpers import hash_password, verify_password, create_access_token, decode_token
-from utils.security import ensure_login_allowed, record_failed_login, clear_failed_logins
+from utils.security import (
+    ensure_persistent_login_allowed,
+    record_persistent_failed_login,
+    clear_persistent_failed_logins,
+)
 
 router = APIRouter(prefix="/auth", tags=["Authentification"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -29,6 +33,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     user = await db.users.find_one({"username": payload.get("sub")})
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    # A user can only have one active session.  Each successful login replaces
+    # this value; a token from an older device is then rejected immediately.
+    if not payload.get("sid") or user.get("active_session_id") != payload["sid"]:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expirée car ce compte a été utilisé sur un autre appareil",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 
@@ -42,18 +54,17 @@ async def get_admin_user(current_user: dict = Depends(get_current_user)) -> dict
 @router.post("/login", response_model=Token)
 async def login(credentials: UserLogin, request: Request):
     client_ip = request.client.host if request.client else "unknown"
-    login_key = f"{client_ip}:{credentials.username.lower()}"
-    ensure_login_allowed(login_key)
     db = get_db()
+    await ensure_persistent_login_allowed(db, credentials.username)
     user = await db.users.find_one({"username": credentials.username})
 
     if not user or not verify_password(credentials.password, user["password"]):
-        record_failed_login(login_key)
+        await record_persistent_failed_login(db, credentials.username, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Identifiant ou mot de passe incorrect"
         )
-    clear_failed_logins(login_key)
+    await clear_persistent_failed_logins(db, credentials.username)
         
     now = datetime.now(timezone.utc).isoformat()
     await db.users.update_one(
@@ -62,6 +73,11 @@ async def login(credentials: UserLogin, request: Request):
     )
 
     token = create_access_token(data={"sub": user["username"], "role": user["role"]})
+    session_id = decode_token(token)["sid"]
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"active_session_id": session_id}}
+    )
     user_out = UserOut(
         username=user["username"],
         nom=user["nom"],

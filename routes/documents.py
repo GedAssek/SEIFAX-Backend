@@ -14,6 +14,7 @@ import os, shutil
 from database.db import get_db
 from routes.auth import get_current_user, get_admin_user
 from utils.email_sender import send_notification_email
+from utils.security import PDF_SIGNATURES, save_validated_upload
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
@@ -30,7 +31,7 @@ def serialize_document(doc: dict) -> dict:
     # Construire l'URL du fichier selon le type de document
     if doc.get("file_name"):
         # Document uploadé via l'admin → fichier local sur le serveur
-        file_url = f"/uploads/documents/{doc['file_name']}"
+        file_url = f"/api/files/documents/{doc['file_name']}"
     else:
         # Document synchronisé depuis Google Drive → URL directe
         file_url = doc.get("file_url", "")
@@ -119,12 +120,7 @@ async def add_document(
     db = get_db()
 
     # Sauvegarder le fichier
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    safe_name = f"{type}_{cycle}_{matiere}_{annee}_{timestamp}.pdf".replace(" ", "_")
-    file_path = os.path.join(UPLOAD_DIR, safe_name)
-
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    safe_name, _ = await save_validated_upload(file, UPLOAD_DIR, PDF_SIGNATURES)
 
     doc = {
         "titre": titre,
@@ -186,12 +182,7 @@ async def update_document(
         if os.path.exists(old_file_path):
             os.remove(old_file_path)
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        safe_name = f"{(type or doc['type'])}_{(cycle or doc['cycle'])}_{(matiere or doc['matiere'])}_{(annee or doc['annee'])}_{timestamp}.pdf".replace(" ", "_")
-        file_path = os.path.join(UPLOAD_DIR, safe_name)
-
-        with open(file_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
+        safe_name, _ = await save_validated_upload(file, UPLOAD_DIR, PDF_SIGNATURES)
         
         update_data["file_name"] = safe_name
 

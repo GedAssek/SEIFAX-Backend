@@ -21,6 +21,8 @@ async def connect_db():
     # Create a new client and connect to the server
     client = AsyncIOMotorClient(MONGODB_URL, server_api=ServerApi('1'))
     db = client[DB_NAME]
+    await db.login_attempts.create_index("username", unique=True)
+    await db.login_attempts.create_index("expires_at", expireAfterSeconds=0)
     
     # Send a ping to confirm a successful connection
     try:
