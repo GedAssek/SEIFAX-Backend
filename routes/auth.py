@@ -7,9 +7,11 @@ GET  /api/auth/me
 from fastapi import APIRouter, HTTPException, Depends, status, Body, Request
 from fastapi.security import OAuth2PasswordBearer
 from datetime import datetime, timezone
+from pymongo import ReturnDocument
 from database.db import get_db
-from models import UserCreate, UserLogin, UserOut, Token
+from models import UserCreate, UserLogin, UserOut, Token, UserProfileCompletion
 from utils.helpers import hash_password, verify_password, create_access_token, decode_token
+from utils.identity import student_registry_key
 from utils.security import (
     ensure_persistent_login_allowed,
     record_persistent_failed_login,
@@ -18,6 +20,25 @@ from utils.security import (
 
 router = APIRouter(prefix="/auth", tags=["Authentification"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+
+def profile_is_complete(user: dict) -> bool:
+    return bool(user.get("sexe") and user.get("promotion") and user.get("authorized_student_id"))
+
+
+async def claim_authorized_student(db, nom: str, prenom: str, sexe: str, promotion: str, username: str) -> dict:
+    """Atomically reserve one official-register entry for one account."""
+    key = student_registry_key(nom, prenom, sexe, promotion)
+    student = await db.authorized_students.find_one_and_update(
+        {**key, "$or": [
+            {"claimed_by": {"$exists": False}}, {"claimed_by": None}, {"claimed_by": username}
+        ]},
+        {"$set": {"claimed_by": username, "claimed_at": datetime.now(timezone.utc).isoformat()}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not student:
+        raise HTTPException(status_code=403, detail="Student is not eligible or is already claimed")
+    return student
 
 
 # ─── Dépendance : Récupérer l'utilisateur courant depuis le token ────────────
@@ -64,6 +85,18 @@ async def login(credentials: UserLogin, request: Request):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Identifiant ou mot de passe incorrect"
         )
+    # Administrators are managed separately from the student eligibility list.
+    if user.get("role") != "admin" and not profile_is_complete(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "profile_completion_required",
+                "message": "Complete your profile before accessing the site.",
+                "nom": user.get("nom", ""),
+                "prenom": user.get("prenom", ""),
+                "email": user.get("email", credentials.username),
+            },
+        )
     await clear_persistent_failed_logins(db, credentials.username)
         
     now = datetime.now(timezone.utc).isoformat()
@@ -85,6 +118,8 @@ async def login(credentials: UserLogin, request: Request):
         email=user["email"],
         cycle=user.get("cycle"),
         annee=user.get("annee"),
+        sexe=user.get("sexe"),
+        promotion=user.get("promotion"),
         role=user["role"]
     )
     return Token(access_token=token, user=user_out)
@@ -105,6 +140,9 @@ async def register(user_data: UserCreate):
     if existing_email:
         raise HTTPException(status_code=400, detail="Cet email est déjà enregistré")
 
+    authorized_student = await claim_authorized_student(
+        db, user_data.nom, user_data.prenom, user_data.sexe, user_data.promotion, str(user_data.username)
+    )
     new_user = {
         "username": user_data.username,
         "password": hash_password(user_data.password),
@@ -113,15 +151,45 @@ async def register(user_data: UserCreate):
         "email": user_data.email,
         "cycle": user_data.cycle,
         "annee": user_data.annee,
+        "sexe": user_data.sexe,
+        "promotion": user_data.promotion,
+        "authorized_student_id": str(authorized_student["_id"]),
         "role": "student",  # Les nouvelles inscriptions sont toujours 'student'
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    await db.users.insert_one(new_user)
+    try:
+        await db.users.insert_one(new_user)
+    except Exception:
+        await db.authorized_students.update_one(
+            {"_id": authorized_student["_id"], "claimed_by": str(user_data.username)},
+            {"$unset": {"claimed_by": "", "claimed_at": ""}},
+        )
+        raise
     return {"message": f"Compte créé avec succès pour {user_data.prenom} {user_data.nom}"}
 
 
 # ─── GET /api/auth/me ────────────────────────────────────────────────────────
+@router.post("/complete-profile")
+async def complete_profile(data: UserProfileCompletion):
+    """Validate legacy-account details against the official register."""
+    db = get_db()
+    user = await db.users.find_one({"username": data.username})
+    if not user or not verify_password(data.password, user["password"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if profile_is_complete(user):
+        raise HTTPException(status_code=400, detail="Profile is already complete")
+    authorized_student = await claim_authorized_student(
+        db, user["nom"], user["prenom"], data.sexe, data.promotion, str(data.username)
+    )
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"sexe": data.sexe, "promotion": data.promotion,
+                  "authorized_student_id": str(authorized_student["_id"])}},
+    )
+    return {"message": "Profile completed. Please log in again."}
+
+
 @router.get("/me", response_model=UserOut)
 async def me(current_user: dict = Depends(get_current_user)):
     return UserOut(
@@ -131,6 +199,8 @@ async def me(current_user: dict = Depends(get_current_user)):
         email=current_user["email"],
         cycle=current_user.get("cycle"),
         annee=current_user.get("annee"),
+        sexe=current_user.get("sexe"),
+        promotion=current_user.get("promotion"),
         role=current_user["role"]
     )
 

@@ -2,7 +2,7 @@
 LEFAXEUR - Modèles Pydantic (Validation des données)
 """
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List
+from typing import Optional, List, Literal
 from enum import Enum
 
 
@@ -32,6 +32,8 @@ class UserCreate(BaseModel):
     email: EmailStr
     cycle: Optional[str] = None
     annee: Optional[int] = None
+    sexe: Literal["M", "F"]
+    promotion: str = Field(..., min_length=3, max_length=80)
     role: Role = Role.student
 
     @field_validator("password")
@@ -51,6 +53,13 @@ class UserLogin(BaseModel):
     password: str = Field(..., min_length=1, max_length=128)
 
 
+class UserProfileCompletion(BaseModel):
+    username: EmailStr
+    password: str = Field(..., min_length=1, max_length=128)
+    sexe: Literal["M", "F"]
+    promotion: str = Field(..., min_length=3, max_length=80)
+
+
 class UserOut(BaseModel):
     username: str
     nom: str
@@ -58,6 +67,8 @@ class UserOut(BaseModel):
     email: str
     cycle: Optional[str] = None
     annee: Optional[int] = None
+    sexe: Optional[str] = None
+    promotion: Optional[str] = None
     role: str
 
 
