@@ -1,4 +1,7 @@
 venv/
 __pycache__/
+.env
+*.env
+uploads/
 # Clé privée Google : ne jamais publier.
 /credentials.json

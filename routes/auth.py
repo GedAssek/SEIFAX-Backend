@@ -4,12 +4,13 @@ POST /api/auth/login
 POST /api/auth/register
 GET  /api/auth/me
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Body
+from fastapi import APIRouter, HTTPException, Depends, status, Body, Request
 from fastapi.security import OAuth2PasswordBearer
 from datetime import datetime, timezone
 from database.db import get_db
 from models import UserCreate, UserLogin, UserOut, Token
 from utils.helpers import hash_password, verify_password, create_access_token, decode_token
+from utils.security import ensure_login_allowed, record_failed_login, clear_failed_logins
 
 router = APIRouter(prefix="/auth", tags=["Authentification"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -39,15 +40,20 @@ async def get_admin_user(current_user: dict = Depends(get_current_user)) -> dict
 
 # ─── POST /api/auth/login ────────────────────────────────────────────────────
 @router.post("/login", response_model=Token)
-async def login(credentials: UserLogin):
+async def login(credentials: UserLogin, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    login_key = f"{client_ip}:{credentials.username.lower()}"
+    ensure_login_allowed(login_key)
     db = get_db()
     user = await db.users.find_one({"username": credentials.username})
 
     if not user or not verify_password(credentials.password, user["password"]):
+        record_failed_login(login_key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Identifiant ou mot de passe incorrect"
         )
+    clear_failed_logins(login_key)
         
     now = datetime.now(timezone.utc).isoformat()
     await db.users.update_one(
@@ -92,6 +98,7 @@ async def register(user_data: UserCreate):
         "cycle": user_data.cycle,
         "annee": user_data.annee,
         "role": "student",  # Les nouvelles inscriptions sont toujours 'student'
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
     await db.users.insert_one(new_user)

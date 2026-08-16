@@ -27,13 +27,15 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 # ─── JSON Web Token (JWT) ───────────────────────────────────────────────────
-SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-key")
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 1440))
 
 
 def create_access_token(data: dict) -> str:
     """Crée un token JWT signé avec une expiration."""
+    if not SECRET_KEY or len(SECRET_KEY) < 32:
+        raise RuntimeError("SECRET_KEY doit être défini et contenir au moins 32 caractères")
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})

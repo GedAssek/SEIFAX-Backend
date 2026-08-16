@@ -1,7 +1,7 @@
 """
 LEFAXEUR - Modèles Pydantic (Validation des données)
 """
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List
 from enum import Enum
 
@@ -26,7 +26,7 @@ class EvalType(str, Enum):
 # ─── Utilisateur ────────────────────────────────────────────────────────────
 class UserCreate(BaseModel):
     username: EmailStr = Field(..., description="Identifiant unique (doit être un email)")
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=12, max_length=128)
     nom: str
     prenom: str
     email: EmailStr
@@ -34,10 +34,18 @@ class UserCreate(BaseModel):
     annee: Optional[int] = None
     role: Role = Role.student
 
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, value: str) -> str:
+        if not (any(c.islower() for c in value) and any(c.isupper() for c in value)
+                and any(c.isdigit() for c in value)):
+            raise ValueError("Le mot de passe doit contenir une minuscule, une majuscule et un chiffre")
+        return value
+
 
 class UserLogin(BaseModel):
     username: EmailStr
-    password: str
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class UserOut(BaseModel):

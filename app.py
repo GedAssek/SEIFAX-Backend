@@ -3,11 +3,13 @@ LEFAXEUR - Point d'entrée principal de l'API FastAPI
 Lancer avec : uvicorn app:app --reload
 Documentation auto : http://localhost:8000/docs
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import os
+import logging
 
 from database.db import connect_db, close_db
 from routes import auth, epreuves, infos, subjects, documents, admin, heures
@@ -50,11 +52,33 @@ app = FastAPI(
 # Autoriser toutes les origines pour assurer la compatibilité (GitHub Pages, Live Server, etc.)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in os.getenv(
+        "ALLOWED_ORIGINS", "https://gedassek.github.io,http://localhost:5500,http://127.0.0.1:5500"
+    ).split(",") if origin.strip()],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > int(os.getenv("MAX_UPLOAD_BYTES", 10 * 1024 * 1024)):
+        return JSONResponse(status_code=413, content={"detail": "Requête trop volumineuse"})
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logging.exception("Unhandled API error for %s", request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Erreur interne du serveur"})
 
 
 # ─── Servir les fichiers uploadés (PDF) ─────────────────────────────────────
