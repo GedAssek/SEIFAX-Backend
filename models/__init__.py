@@ -4,6 +4,7 @@ LEFAXEUR - Modèles Pydantic (Validation des données)
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Literal
 from enum import Enum
+from utils.identity import normalize_promotion
 
 
 class Role(str, Enum):
@@ -26,7 +27,7 @@ class EvalType(str, Enum):
 # ─── Utilisateur ────────────────────────────────────────────────────────────
 class UserCreate(BaseModel):
     username: EmailStr = Field(..., description="Identifiant unique (doit être un email)")
-    password: str = Field(..., min_length=15, max_length=72)
+    password: str = Field(..., min_length=8, max_length=72)
     nom: str
     prenom: str
     email: EmailStr
@@ -47,6 +48,17 @@ class UserCreate(BaseModel):
             raise ValueError("Le mot de passe doit contenir une minuscule, une majuscule et un chiffre")
         return value
 
+    @field_validator("sexe", mode="before")
+    @classmethod
+    def normalize_sexe(cls, value: str) -> str:
+        labels = {"masculin": "M", "homme": "M", "feminin": "F", "féminin": "F", "femme": "F"}
+        return labels.get(str(value).strip().lower(), str(value).strip().upper())
+
+    @field_validator("promotion")
+    @classmethod
+    def normalize_promotion_value(cls, value: str) -> str:
+        return normalize_promotion(value)
+
 
 class UserLogin(BaseModel):
     username: EmailStr
@@ -58,6 +70,17 @@ class UserProfileCompletion(BaseModel):
     password: str = Field(..., min_length=1, max_length=128)
     sexe: Literal["M", "F"]
     promotion: str = Field(..., min_length=3, max_length=80)
+
+    @field_validator("sexe", mode="before")
+    @classmethod
+    def normalize_sexe(cls, value: str) -> str:
+        labels = {"masculin": "M", "homme": "M", "feminin": "F", "féminin": "F", "femme": "F"}
+        return labels.get(str(value).strip().lower(), str(value).strip().upper())
+
+    @field_validator("promotion")
+    @classmethod
+    def normalize_promotion_value(cls, value: str) -> str:
+        return normalize_promotion(value)
 
 
 class UserOut(BaseModel):
