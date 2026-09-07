@@ -1,8 +1,6 @@
 """
 LEFAXEUR - Script d'initialisation de la base de données
 Lance ce script UNE SEULE FOIS pour créer les données de base :
-- Compte Admin (admin / admin2026)
-- Compte User de test (user / user2026)
 - Tous les cycles et matières (hors Assiduité et EPS)
 
 Usage : python seed.py
