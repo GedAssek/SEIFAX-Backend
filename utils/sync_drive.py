@@ -116,6 +116,26 @@ async def list_drive_files(service, parent_id: str) -> List[Dict]:
             raise e
     return results
 
+
+async def walk_drive_files(service, parent_id: str, folder_path: List[str]):
+    """Parcourt récursivement un dossier Drive et retourne chaque fichier."""
+    for item in await list_drive_files(service, parent_id):
+        if item['mimeType'] == 'application/vnd.google-apps.folder':
+            async for file_item, file_path in walk_drive_files(
+                service, item['id'], folder_path + [item['name']]
+            ):
+                yield file_item, file_path
+        else:
+            yield item, folder_path
+
+
+def metadata_from_path(root_name: str, folder_path: List[str]):
+    """Déduit les métadonnées depuis l'ensemble des dossiers parents."""
+    matiere = folder_path[-1] if folder_path else root_name
+    cycle, annee, annee_etude = parse_cycle_annee(" ".join([root_name, *folder_path]))
+    return matiere, cycle, annee, annee_etude
+
+
 async def sync_drive_to_db(standalone=False):
     try:
         service = get_drive_service()
@@ -152,37 +172,19 @@ async def sync_drive_to_db(standalone=False):
             continue
             
         print(f"  -> Nom du dossier racine: {root_name}")
-        
-        level1_items = await list_drive_files(service, root_id)
-        
-        for l1 in level1_items:
-            if l1['mimeType'] == 'application/vnd.google-apps.folder':
-                # Si le nom contient une année ou "annee", c'est probablement le niveau "Cycle/Année"
-                if re.search(r'(20\d{2}|annee|ann.e)', l1['name'].lower()):
-                    cycle, annee, annee_etude = parse_cycle_annee(l1['name'])
-                    
-                    level2_items = await list_drive_files(service, l1['id'])
-                    for l2 in level2_items:
-                        if l2['mimeType'] == 'application/vnd.google-apps.folder':
-                            matiere = l2['name']
-                            
-                            files = await list_drive_files(service, l2['id'])
-                            for f in files:
-                                if f['mimeType'] != 'application/vnd.google-apps.folder':
-                                    res = await process_and_insert_file(docs_coll, f, matiere, cycle, annee, annee_etude)
-                                    if res: total_inserted += 1
-                                    else: total_skipped += 1
-                                    
-                else:
-                    matiere = l1['name']
-                    cycle, annee, annee_etude = parse_cycle_annee(root_name)
-                    
-                    files = await list_drive_files(service, l1['id'])
-                    for f in files:
-                        if f['mimeType'] != 'application/vnd.google-apps.folder':
-                            res = await process_and_insert_file(docs_coll, f, matiere, cycle, annee, annee_etude)
-                            if res: total_inserted += 1
-                            else: total_skipped += 1
+
+        # Les fichiers peuvent être placés à n'importe quelle profondeur.
+        # Le dernier dossier parent est affiché comme matière dans le site.
+        async for file_item, folder_path in walk_drive_files(service, root_id, []):
+            matiere, cycle, annee, annee_etude = metadata_from_path(root_name, folder_path)
+            res = await process_and_insert_file(
+                docs_coll, file_item, matiere, cycle, annee, annee_etude
+            )
+            if res:
+                total_inserted += 1
+            else:
+                total_skipped += 1
+
 
     if standalone:
         try:
