@@ -16,6 +16,7 @@ class DocumentType(str, Enum):
     cours = "cours"
     tp = "tp"
     evaluation = "evaluation"
+    autres = "autres"
 
 
 class EvalType(str, Enum):
@@ -144,7 +145,7 @@ class InfoOut(BaseModel):
 class DocumentOut(BaseModel):
     id: str
     titre: str
-    type: str          # cours | tp | evaluation
+    type: str          # cours | tp | evaluation | autres
     categorie_eval: Optional[str] = None  # interro | compo | examen
     matiere: str
     cycle: str

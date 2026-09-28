@@ -103,7 +103,7 @@ async def list_documents(
 @router.post("/", status_code=201)
 async def add_document(
     titre: str = Form(...),
-    type: str = Form(...), # cours, tp, evaluation
+    type: str = Form(...), # cours, tp, evaluation, autres
     matiere: str = Form(...),
     cycle: str = Form(...),
     annee: int = Form(...),

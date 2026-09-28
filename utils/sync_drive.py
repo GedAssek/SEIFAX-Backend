@@ -38,16 +38,24 @@ def get_drive_service():
 
 def determine_type(filename: str) -> str:
     name_lower = filename.lower()
-    
+
     # Cours
-    if any(kw in name_lower for kw in ['module', 'support', 'cours', 'doc']):
+    if any(kw in name_lower for kw in [
+        'module', 'support', 'cours', 'chapitre', 'leçon', 'lecon',
+        'polycopié', 'poly', 'syllabus', 'slide', 'présentation', 'presentation'
+    ]):
         return 'cours'
     # TP/TD
-    elif any(kw in name_lower for kw in ['td', 'exo', 'sujet']):
+    if any(kw in name_lower for kw in ['tp', 'td', 'travaux pratiques', 'travaux dirigés', 'exo', 'exercice']):
         return 'tp'
-    # Evaluation (fallback pour 'copie', 'interro', 'examen' et le reste)
-    else:
+    # Évaluations : uniquement si le nom l'indique explicitement.
+    if any(kw in name_lower for kw in [
+        'interro', 'compo', 'composition', 'examen', 'exam', 'partiel',
+        'contrôle', 'controle', 'devoir', 'quiz', 'test', 'sujet'
+    ]):
         return 'evaluation'
+    # Tous les autres fichiers restent consultables dans l'onglet « Autres ».
+    return 'autres'
 
 def parse_cycle_annee(folder_name: str):
     """
@@ -295,10 +303,18 @@ async def process_and_insert_file(docs_coll, file_item, matiere, cycle, annee, a
     
     existing = await docs_coll.find_one({"file_url": file_url})
     if existing:
+        update_data = {
+            "type": determine_type(file_name),
+            "matiere": matiere,
+            "cycle": cycle,
+            "annee": annee,
+            "annee_etude": annee_etude,
+        }
+        if update_data["type"] != "evaluation":
+            update_data["categorie_eval"] = None
         # La structure Drive est la source de vérité, y compris après une
         # ancienne synchronisation qui aurait attribué une mauvaise année.
-        if annee_etude is not None and existing.get('annee_etude') != annee_etude:
-            await docs_coll.update_one({"_id": existing["_id"]}, {"$set": {"annee_etude": annee_etude}})
+        await docs_coll.update_one({"_id": existing["_id"]}, {"$set": update_data})
         return False
         
     doc_type = determine_type(file_name)
