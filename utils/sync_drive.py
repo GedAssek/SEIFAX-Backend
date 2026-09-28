@@ -15,7 +15,9 @@ load_dotenv()
 ROOT_FOLDER_IDS = [
     "1XUQZ9-mfHrX9O9796e9xyZtVvRlFf-U2",
     "1Ue1s2Vp8bDSY99ra_95d1X_qZ1arNlPA",
-    "18bjsPtNCfR7_49U-X4V-eQCOkiWybX_n"
+    "18bjsPtNCfR7_49U-X4V-eQCOkiWybX_n",
+    "1SoMkh7FEEnP6IZBftCd0lAwCK3jEbkY7",
+    "11HpuMJ3mtldWVUWxlZwtTZ5W_jE9R66Z",
 ]
 
 def get_drive_service():
