@@ -72,7 +72,7 @@ async def list_rentrees(admin: dict = Depends(get_admin_user)):
 
 @router.post("/rentrees", status_code=201)
 async def sauvegarder_rentree(
-    date_rentree: str = Body(...),
+    date_rentree: str = Body(..., embed=True),
     admin: dict = Depends(get_admin_user),
 ):
     """Admin: configure the start date used to number a school year."""
