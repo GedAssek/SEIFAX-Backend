@@ -7,10 +7,11 @@ DELETE /api/heures/semaine/{id}      → Admin supprime une entrée de semaine
 """
 from fastapi import APIRouter, HTTPException, Depends, Body
 from bson import ObjectId
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from database.db import get_db
 from routes.auth import get_current_user, get_admin_user
+from utils.school_weeks import school_week, selected_date_from_value
 
 router = APIRouter(prefix="/heures", tags=["Volumes Horaires"])
 
@@ -40,6 +41,63 @@ CATEGORIES_SEI2 = [
 CATEGORIES = {1: CATEGORIES_SEI1, 2: CATEGORIES_SEI2}
 
 
+async def rentree_pour_date(db, selected_date: date) -> dict:
+    """Return the latest configured school start at or before a selected date."""
+    rentree = await db.rentrees_scolaires.find_one(
+        {"date_rentree": {"$lte": selected_date.isoformat()}},
+        sort=[("date_rentree", -1)],
+    )
+    if not rentree:
+        raise HTTPException(
+            status_code=400,
+            detail="Aucune rentrée scolaire n'est configurée pour cette date.",
+        )
+    return rentree
+
+
+@router.get("/rentrees")
+async def list_rentrees(admin: dict = Depends(get_admin_user)):
+    """Admin: list configured school-year start dates."""
+    db = get_db()
+    cursor = db.rentrees_scolaires.find({}).sort("date_rentree", -1)
+    return [
+        {
+            "id": str(doc["_id"]),
+            "annee_scolaire": doc["annee_scolaire"],
+            "date_rentree": doc["date_rentree"],
+        }
+        async for doc in cursor
+    ]
+
+
+@router.post("/rentrees", status_code=201)
+async def sauvegarder_rentree(
+    date_rentree: str = Body(...),
+    admin: dict = Depends(get_admin_user),
+):
+    """Admin: configure the start date used to number a school year."""
+    try:
+        rentree_date = date.fromisoformat(date_rentree)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="La date de rentrée est invalide.") from exc
+
+    annee_scolaire = f"{rentree_date.year}-{rentree_date.year + 1}"
+    db = get_db()
+    await db.rentrees_scolaires.update_one(
+        {"annee_scolaire": annee_scolaire},
+        {
+            "$set": {
+                "annee_scolaire": annee_scolaire,
+                "date_rentree": rentree_date.isoformat(),
+                "modifie_par": admin.get("username", "admin"),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        },
+        upsert=True,
+    )
+    return {"annee_scolaire": annee_scolaire, "date_rentree": rentree_date.isoformat()}
+
+
 # ─── GET /api/heures/{annee} ──────────────────────────────────────────────────
 @router.get("/{annee}")
 async def get_heures(
@@ -56,13 +114,17 @@ async def get_heures(
     # Sommer toutes les heures enregistrées
     heures_effectuees = 0
     semaines = []
-    cursor = db.heures_semaines.find({"annee": annee}).sort("semaine", -1)
+    cursor = db.heures_semaines.find({"annee": annee}).sort("date_debut", -1)
     async for doc in cursor:
         h = doc.get("heures_totales", 0)
         heures_effectuees += h
         semaines.append({
             "id": str(doc["_id"]),
             "semaine": doc["semaine"],
+            "semaine_numero": doc.get("semaine_numero"),
+            "annee_scolaire": doc.get("annee_scolaire"),
+            "date_debut": doc.get("date_debut"),
+            "date_fin": doc.get("date_fin"),
             "heures_totales": h,
             "enregistre_par": doc.get("enregistre_par", ""),
             "created_at": doc.get("created_at", "")
@@ -112,23 +174,37 @@ async def sauvegarder_semaine(
     db = get_db()
 
     # Vérifier doublon
-    existing = await db.heures_semaines.find_one({"annee": annee, "semaine": semaine})
+    try:
+        selected_date = selected_date_from_value(semaine)
+        rentree = await rentree_pour_date(db, selected_date)
+        semaine_scolaire = school_week(semaine, date.fromisoformat(rentree["date_rentree"]))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    existing = await db.heures_semaines.find_one({
+        "annee": annee,
+        "date_debut": semaine_scolaire["date_debut"],
+    })
     if existing:
         raise HTTPException(
             status_code=400,
-            detail=f"Les heures pour la semaine {semaine} (Année {annee}) ont déjà été enregistrées."
+            detail=f"Les heures pour la {semaine_scolaire['semaine']} (Année {annee}) ont déjà été enregistrées."
         )
 
     doc = {
         "annee": annee,
-        "semaine": semaine,
+        **semaine_scolaire,
         "heures_totales": heures_totales,
         "commentaire": commentaire,
         "enregistre_par": admin.get("username", "admin"),
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     result = await db.heures_semaines.insert_one(doc)
-    return {"message": f"Semaine {semaine} enregistrée ({heures_totales}h)", "id": str(result.inserted_id)}
+    return {
+        "message": f"{semaine_scolaire['semaine']} enregistrée ({heures_totales}h)",
+        "id": str(result.inserted_id),
+        **semaine_scolaire,
+    }
 
 
 # ─── GET /api/heures/semaines/{annee} ────────────────────────────────────────
@@ -142,13 +218,17 @@ async def list_semaines(
         raise HTTPException(status_code=404, detail="Année non reconnue")
 
     db = get_db()
-    cursor = db.heures_semaines.find({"annee": annee}).sort("semaine", -1)
+    cursor = db.heures_semaines.find({"annee": annee}).sort("date_debut", -1)
     results = []
     async for doc in cursor:
         results.append({
             "id": str(doc["_id"]),
             "annee": doc["annee"],
             "semaine": doc["semaine"],
+            "semaine_numero": doc.get("semaine_numero"),
+            "annee_scolaire": doc.get("annee_scolaire"),
+            "date_debut": doc.get("date_debut"),
+            "date_fin": doc.get("date_fin"),
             "heures_totales": doc.get("heures_totales", 0),
             "commentaire": doc.get("commentaire", ""),
             "enregistre_par": doc.get("enregistre_par", ""),
