@@ -113,11 +113,16 @@ async def get_heures(
 
     # Sommer toutes les heures enregistrées
     heures_effectuees = 0
+    heures_par_cat = {}
     semaines = []
     cursor = db.heures_semaines.find({"annee": annee}).sort("date_debut", -1)
     async for doc in cursor:
         h = doc.get("heures_totales", 0)
         heures_effectuees += h
+        h_cat = doc.get("heures_par_categorie", {})
+        for c_label, c_h in h_cat.items():
+            heures_par_cat[c_label] = heures_par_cat.get(c_label, 0) + float(c_h)
+
         semaines.append({
             "id": str(doc["_id"]),
             "semaine": doc["semaine"],
@@ -126,18 +131,26 @@ async def get_heures(
             "date_debut": doc.get("date_debut"),
             "date_fin": doc.get("date_fin"),
             "heures_totales": h,
+            "heures_par_categorie": h_cat,
             "enregistre_par": doc.get("enregistre_par", ""),
             "created_at": doc.get("created_at", "")
         })
 
     heures_restantes = max(0, total_prevu - heures_effectuees)
-    pct = round(min(100, (heures_effectuees / total_prevu) * 100))
+    pct = round(min(100, (heures_effectuees / total_prevu) * 100)) if total_prevu > 0 else 0
 
-    # Estimation de la progression par catégorie
+    # Progression réelle par catégorie
     categories = []
     for cat in CATEGORIES.get(annee, []):
-        cat_pct = round(min(100, (heures_effectuees / total_prevu) * 100)) if total_prevu > 0 else 0
-        cat_effectuees = round(cat["h"] * pct / 100)
+        cat_effectuees = heures_par_cat.get(cat["label"])
+
+        # Rétrocompatibilité si aucune heure par matière n'est enregistrée
+        if cat_effectuees is None and heures_effectuees > 0 and not heures_par_cat:
+            cat_effectuees = round(cat["h"] * pct / 100)
+        elif cat_effectuees is None:
+            cat_effectuees = 0
+
+        cat_pct = round(min(100, (cat_effectuees / cat["h"]) * 100)) if cat["h"] > 0 else 0
         categories.append({
             "label": cat["label"],
             "icon": cat["icon"],
@@ -162,8 +175,9 @@ async def get_heures(
 @router.post("/semaine", status_code=201)
 async def sauvegarder_semaine(
     annee: int = Body(...),
-    semaine: str = Body(...),          # ex: "2026-W32"
-    heures_totales: float = Body(...), # heures effectuées cette semaine
+    semaine: str = Body(...),          # ex: "01, 05/10/2026"
+    heures_totales: float = Body(0.0), # heures effectuées cette semaine
+    heures_par_categorie: dict = Body(default={}),
     commentaire: str = Body(""),
     admin: dict = Depends(get_admin_user)
 ):
@@ -191,10 +205,14 @@ async def sauvegarder_semaine(
             detail=f"Les heures pour la {semaine_scolaire['semaine']} (Année {annee}) ont déjà été enregistrées."
         )
 
+    if heures_par_categorie and not heures_totales:
+        heures_totales = sum(float(v) for v in heures_par_categorie.values() if v)
+
     doc = {
         "annee": annee,
         **semaine_scolaire,
         "heures_totales": heures_totales,
+        "heures_par_categorie": heures_par_categorie,
         "commentaire": commentaire,
         "enregistre_par": admin.get("username", "admin"),
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -230,6 +248,7 @@ async def list_semaines(
             "date_debut": doc.get("date_debut"),
             "date_fin": doc.get("date_fin"),
             "heures_totales": doc.get("heures_totales", 0),
+            "heures_par_categorie": doc.get("heures_par_categorie", {}),
             "commentaire": doc.get("commentaire", ""),
             "enregistre_par": doc.get("enregistre_par", ""),
             "created_at": doc.get("created_at", "")

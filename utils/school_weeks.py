@@ -5,6 +5,7 @@ import re
 
 
 ISO_WEEK_PATTERN = re.compile(r"^(?P<year>\d{4})-W(?P<week>\d{2})$")
+OLD_FORMAT_PATTERN = re.compile(r"^\s*\d{2}\s*,\s*(?P<day>\d{2})/(?P<month>\d{2})/(?P<year>\d{4})\s*$")
 
 
 def selected_date_from_value(value: str) -> date:
@@ -15,10 +16,17 @@ def selected_date_from_value(value: str) -> date:
             return date.fromisocalendar(int(match["year"]), int(match["week"]), 1)
         except ValueError as exc:
             raise ValueError("Semaine ISO invalide") from exc
+    old_match = OLD_FORMAT_PATTERN.fullmatch(value)
+    if old_match:
+        try:
+            return date(int(old_match["year"]), int(old_match["month"]), int(old_match["day"]))
+        except ValueError as exc:
+            raise ValueError("Date invalide dans l'ancien format") from exc
+
     try:
         selected_date = date.fromisoformat(value)
     except ValueError as exc:
-        raise ValueError("La semaine doit etre au format AAAA-WNN ou AAAA-MM-JJ") from exc
+        raise ValueError("La semaine doit etre au format AAAA-WNN, AAAA-MM-JJ ou NN, JJ/MM/AAAA") from exc
     return selected_date
 
 
