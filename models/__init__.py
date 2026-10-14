@@ -1,7 +1,7 @@
 """
 LEFAXEUR - Modèles Pydantic (Validation des données)
 """
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from typing import Optional, List, Literal
 from enum import Enum
 from utils.identity import normalize_promotion
@@ -35,7 +35,7 @@ class UserCreate(BaseModel):
     cycle: Optional[str] = None
     annee: Optional[int] = None
     sexe: Literal["M", "F"]
-    promotion: str = Field(..., min_length=3, max_length=80)
+    promotion: str = Field(default="", max_length=80)
     role: Role = Role.student
 
     @field_validator("password")
@@ -59,6 +59,16 @@ class UserCreate(BaseModel):
     @classmethod
     def normalize_promotion_value(cls, value: str) -> str:
         return normalize_promotion(value)
+
+    @model_validator(mode="after")
+    def set_eac_sei_2026_promotion(self):
+        """Keep the promotion consistent with the EAC-SEI 2026 intake."""
+        normalized_cycle = (self.cycle or "").replace("-", " ").upper().strip()
+        if normalized_cycle == "EAC SEI" and self.annee == 1:
+            self.promotion = "EAC SEI 2026"
+        elif not self.promotion:
+            raise ValueError("La promotion est obligatoire")
+        return self
 
 
 class UserLogin(BaseModel):
