@@ -30,9 +30,12 @@ async def background_sync_task():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
-    task = asyncio.create_task(background_sync_task())
+    task = None
+    if os.getenv("ENABLE_BACKGROUND_SYNC", "true").lower() == "true":
+        task = asyncio.create_task(background_sync_task())
     yield
-    task.cancel()
+    if task:
+        task.cancel()
     await close_db()
 
 

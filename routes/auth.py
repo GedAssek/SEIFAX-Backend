@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Depends, status, Body, Request
 from fastapi.security import OAuth2PasswordBearer
 from datetime import datetime, timezone
 from pymongo import ReturnDocument
+import os
 from database.db import get_db
 from models import UserCreate, UserLogin, UserOut, Token, UserProfileCompletion
 from utils.helpers import hash_password, verify_password, create_access_token, decode_token
@@ -23,7 +24,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 def profile_is_complete(user: dict) -> bool:
+    if not authorization_registry_enabled():
+        return bool(user.get("sexe") and user.get("promotion"))
     return bool(user.get("sexe") and user.get("promotion") and user.get("authorized_student_id"))
+
+
+def authorization_registry_enabled() -> bool:
+    """Allow the official student registry check to be temporarily disabled."""
+    return os.getenv("ENFORCE_AUTHORIZED_STUDENTS", "false").lower() == "true"
 
 
 async def claim_authorized_student(db, nom: str, prenom: str, sexe: str, promotion: str, username: str) -> dict:
@@ -140,9 +148,11 @@ async def register(user_data: UserCreate):
     if existing_email:
         raise HTTPException(status_code=400, detail="Cet email est déjà enregistré")
 
-    authorized_student = await claim_authorized_student(
-        db, user_data.nom, user_data.prenom, user_data.sexe, user_data.promotion, str(user_data.username)
-    )
+    authorized_student = None
+    if authorization_registry_enabled():
+        authorized_student = await claim_authorized_student(
+            db, user_data.nom, user_data.prenom, user_data.sexe, user_data.promotion, str(user_data.username)
+        )
     new_user = {
         "username": user_data.username,
         "password": hash_password(user_data.password),
@@ -153,18 +163,20 @@ async def register(user_data: UserCreate):
         "annee": user_data.annee,
         "sexe": user_data.sexe,
         "promotion": user_data.promotion,
-        "authorized_student_id": str(authorized_student["_id"]),
         "role": "student",  # Les nouvelles inscriptions sont toujours 'student'
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
+    if authorized_student:
+        new_user["authorized_student_id"] = str(authorized_student["_id"])
 
     try:
         await db.users.insert_one(new_user)
     except Exception:
-        await db.authorized_students.update_one(
-            {"_id": authorized_student["_id"], "claimed_by": str(user_data.username)},
-            {"$unset": {"claimed_by": "", "claimed_at": ""}},
-        )
+        if authorized_student:
+            await db.authorized_students.update_one(
+                {"_id": authorized_student["_id"], "claimed_by": str(user_data.username)},
+                {"$unset": {"claimed_by": "", "claimed_at": ""}},
+            )
         raise
     return {"message": f"Compte créé avec succès pour {user_data.prenom} {user_data.nom}"}
 
@@ -179,13 +191,17 @@ async def complete_profile(data: UserProfileCompletion):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if profile_is_complete(user):
         raise HTTPException(status_code=400, detail="Profile is already complete")
-    authorized_student = await claim_authorized_student(
-        db, user["nom"], user["prenom"], data.sexe, data.promotion, str(data.username)
-    )
+    authorized_student = None
+    if authorization_registry_enabled():
+        authorized_student = await claim_authorized_student(
+            db, user["nom"], user["prenom"], data.sexe, data.promotion, str(data.username)
+        )
+    update_data = {"sexe": data.sexe, "promotion": data.promotion}
+    if authorized_student:
+        update_data["authorized_student_id"] = str(authorized_student["_id"])
     await db.users.update_one(
         {"_id": user["_id"]},
-        {"$set": {"sexe": data.sexe, "promotion": data.promotion,
-                  "authorized_student_id": str(authorized_student["_id"])}},
+        {"$set": update_data},
     )
     return {"message": "Profile completed. Please log in again."}
 
