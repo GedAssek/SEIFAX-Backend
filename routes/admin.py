@@ -119,9 +119,17 @@ async def delete_user(user_id: str, admin: dict = Depends(get_admin_user)):
     # Empêcher l'admin de se supprimer lui-même
     if str(admin["_id"]) == user_id:
         raise HTTPException(status_code=400, detail="Vous ne pouvez pas supprimer votre propre compte")
+    # Récupérer l'utilisateur avant suppression pour libérer son entrée authorized_students
+    user_to_delete = await db.users.find_one({"_id": ObjectId(user_id)})
     result = await db.users.delete_one({"_id": ObjectId(user_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    # Libérer l'entrée authorized_students liée à ce compte (permet la réinscription)
+    if user_to_delete and user_to_delete.get("username"):
+        await db.authorized_students.update_many(
+            {"claimed_by": user_to_delete["username"]},
+            {"$unset": {"claimed_by": "", "claimed_at": ""}}
+        )
     return {"message": "Utilisateur supprimé avec succès"}
 
 # ─── POST /api/admin/sync-drive ──────────────────────────────────────────────
